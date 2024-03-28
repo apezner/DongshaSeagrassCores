@@ -1,0 +1,1852 @@
+---
+title: "Dongsha Seagrass Cores MS"
+author: "Dr. Ariel Pezner, University of California San Diego, Scripps Inst. of Oceanography"
+date: "03/13/2024"
+output: html_document
+---
+
+The following is the code used to analyze data and produce figures featured in the manuscript "Coral growth along a natural gradient of seawater temperature, pH, and oxygen in a nearshore seagrass bed on Dongsha Atoll, Taiwan" by Pezner et al. Code may be used with proper attribution. Any questions, please contact Dr. Ariel Pezner at arielpezner@gmail.com.
+
+## Set up
+```{r Load various packages and functions}
+# Load packages
+library(ggplot2);library(scales);library(dplyr);library(ggthemes);library(patchwork);library(RColorBrewer); library(tidyverse);library(readr);library(DescTools);library(pastecs);library(forcats);library(reshape2);library(lubridate);
+library(readxl); library(gsw); library(ggpubr);library(Rmisc);library(dplyr); library(akima)
+
+# Load functions (source will vary by computer)
+source('~/Documents/SIO/Dongsha 2018/Code/Github/calcDOatsat.R') # load functions to calculate DO saturation concentration (2 ways)
+source('~/Documents/SIO/Dongsha 2018/Code/Github/calibcalcpH.R') # load functions to calibrate pH
+
+# Load color palettes
+library(RColorBrewer); library(MetBrewer); library(wesanderson); library(paletteer)
+```
+
+## FIGURE 2 - SPATIAL SURVEY
+
+Load data required to make seawater chemistry spatial contour plots and calculate statistics.
+```{r Load and process spatial survey data}
+## Load data (file location will vary by user)
+  botdat <- read_excel("~/Documents/SIO/Dongsha 2018/Data/Dryad/bottledata.xlsx")
+  coreloc <- read_excel("~/Documents/SIO/Dongsha 2018/Data/Dryad/coreGPS.xlsx")
+  
+## Reformat Time column to only HH:MM
+  botdat$Time <- format(botdat$Time, '%T')
+
+## Convert oxygen mg/L to (umol/kg)
+  # Calculate density
+    # Create pressure variable using depth = pressure in dbar
+    botdat$pres = rep(0.5,nrow(botdat))
+    # Calculate absolute salinity
+    botdat$SA = gsw_SA_from_SP(botdat$Sal,botdat$pres,116.722694,20.707819) # using GPS point near sampling area
+    # Calculate conservative T
+    botdat$CT = gsw_CT_from_t(botdat$SA,botdat$Temp,botdat$pres)
+    # Calculate density (kg/m3)
+    botdat$dens = gsw_rho(botdat$SA,botdat$CT,botdat$pres)
+  # Convert mg/L to umol/kg
+  botdat$DO_umolkg =((botdat$DO_mgL*(10^6))/31.98)/botdat$dens
+  # Calculate DO saturation concentration (100% sat concentration)
+  botdat$DOatsat = calcDOatsat_GG(botdat$Temp,botdat$Sal)
+
+## Add column to group stations by distance from shore (nearshore, mid, outer, offshore) and survey description
+  botdat = botdat %>%
+            mutate(Location = case_when(Station == "N7"  | Station == "3" | Station == "N1" ~ "Nearshore", 
+                                        Station == "N8"  | Station == "4" | Station == "N2" ~ "Mid",
+                                        Station == "N9"  | Station == "N6" | Station == "N3" ~ "Outer",
+                                        Station == "N10" | Station == "N5" | Station == "N4" ~ "Outside"),
+                   Survey_ID = case_when(Survey == 1  ~ "Late Afternoon",
+                                         Survey == 2  ~ "Mid Morning",
+                                         Survey == 3  ~ "Early Morning",
+                                         Survey == 4  ~ "Mid-day"))
+
+## Re-order the location and survey names for plotting
+  botdat = botdat %>% mutate(Location = fct_relevel(Location, "Nearshore","Mid","Outer","Outside"))
+  botdat = botdat %>% mutate(Survey_ID = fct_relevel(Survey_ID, "Early Morning","Mid Morning","Mid-day","Late Afternoon"))
+
+## Filter Data by Survey Date
+  s1 = botdat[botdat$Survey == '1',]
+  s2 = botdat[botdat$Survey == '2',]
+  s3 = botdat[botdat$Survey == '3',]
+  s4 = botdat[botdat$Survey == '4',]
+```
+
+```{r Regular Spatial Survey Contour Plots}
+## Make a function to interpolate and plot specific variable and survey
+  plotcontour <- function(s, surveyname, var, varname, gridx, gridy, legendtitle, a, b) {
+    ## Interpolate data
+    fld <- with(s, interp(x = s[["Lon"]], y = s[["Lat"]], z = s[[var]], nx=gridx, ny=gridy))
+    
+    ## prepare data in long format
+    df <- melt(fld$z, na.rm = T)
+    names(df) <- c("Lon", "Lat", varname)
+    df$Lon <- fld$x[df$Lon]
+    df$Lat <- fld$y[df$Lat]
+    df[[varname]] = as.numeric(df[[varname]])
+    
+    ## Make continuous palette
+    pal <- wes_palette("Zissou1", 100, type = "continuous")
+    
+   g <- ggplot() +
+        # Plot contour plot
+        geom_tile(data = df, aes_string(x = "Lon", y = "Lat", fill = varname)) + 
+        scale_fill_gradientn(colours = pal,limits = c(a,b))+
+        #scale_fill_gradient2(low = "#007FFB", mid = "white", high = "#FE100C", midpoint = 0,limits = c(a,b))+
+        #scale_fill_paletteer_c("ggthemes::Orange-Blue-White Diverging")+
+        #scale_fill_gradientn(colors = pal_spg,limits = c(a,b))+
+        # Adjust contour colormap orientation, etc.
+        guides(fill = guide_colourbar(title.position = "right", title.hjust = 0.5, barwidth = 1, barheight = 12),
+              colour = guide_legend(reverse=T))+
+        # Plot bottle sample locations in black
+        geom_point(data = s, aes(x = Lon, y = Lat), color = "black")+
+        # Plot coral core sample locations as black open circles
+        geom_point(data = coreloc, aes(x = Lon, y = Lat), color = "white", shape = "o", size = 3)+
+        theme_classic() +
+        theme(legend.title = element_text(size = 10, angle = -90),
+              axis.text = element_text(size = 8, color = "black"),
+              axis.title.x = element_text(size = 10, vjust = -0.5),
+              axis.title.y = element_text(size = 10, vjust = 0.2),
+              legend.text = element_text(size = 10),
+              plot.title = element_text(face = "bold", hjust = 0.5),
+              axis.text.x = element_text(colour="black"), 
+              axis.text.y = element_text(colour="black"),
+              axis.ticks = element_line(color = "black"))+
+              labs(fill = legendtitle) + 
+        scale_y_continuous("Latitude", labels = function(Lat) paste0(sprintf("%.3f", Lat)), breaks = c(20.707,20.710,20.713,20.716))+
+        scale_x_continuous("Longitude", labels = function(Lon) paste0(sprintf("%.3f", Lon)),breaks = c(116.719, 116.723, 116.727))
+  }
+
+## Plotting
+  # Temperature
+  T_s1 = plotcontour(s1, "26 June\n15:13-16:21", "Temp", "T", 200, 200,"Temperature (ºC)",28,36) +
+            theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                              barheight = 6, 
+                                                                              title.position = "right",
+                                                                              title.hjust = -.25))
+  T_s2 = plotcontour(s2, "27 June\n11:04-11:56", "Temp", "T", 200, 200,"Temperature (ºC)",28,36) +
+            theme(legend.position = "none",
+                  axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())
+  T_s3 = plotcontour(s3, "30 June\n06:34-7:15", "Temp", "T", 200, 200,"Temperature (ºC)",28,36) +
+            theme(legend.position = "none",
+                  axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank())
+  T_s4 = plotcontour(s4, "30 June\n12:43-13:27", "Temp", "T", 200, 200,"Temperature (ºC)",28,36) +
+            theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank(),
+                    legend.position = "none")
+  
+  # Oxygen
+  do_s1 = plotcontour(s1, "26 June\n15:13-16:21", "DO_umolkg", "DO", 200, 200,"DO (µmol kg  )",60,400) +
+            theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                              barheight = 6, 
+                                                                              title.position = "right",
+                                                                              title.hjust = -.25))
+  do_s2 = plotcontour(s2, "27 June\n11:04-11:56", "DO_umolkg", "DO", 200, 200,"DO (µmol kg  )",60,400) +
+            theme(legend.position = "none",
+                  axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())
+  do_s3 = plotcontour(s3, "30 June\n06:34-7:15", "DO_umolkg", "DO", 200, 200,"DO (µmol kg  )",60,400) +
+            theme(legend.position = "none",
+                  axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank())
+  do_s4 = plotcontour(s4, "30 June\n12:43-13:27", "DO_umolkg", "DO", 200, 200,"DO (µmol kg  )",60,400) +
+            theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank(),
+                    legend.position = "none")
+  # DIC
+  dic_s1 = plotcontour(s1, "26 June\n15:13-16:21", "DIC", "DIC", 200, 200,"DIC (µmol kg  )",1390,2060) +
+            theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                              barheight = 6, 
+                                                                              title.position = "right",
+                                                                              title.hjust = -.25))
+  dic_s2 = plotcontour(s2, "27 June\n11:04-11:56", "DIC", "DIC", 200, 200,"DIC (µmol kg  )",1390,2060) +
+              theme(legend.position = "none",
+                  axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())
+  dic_s3 = plotcontour(s3, "30 June\n06:34-7:15", "DIC", "DIC", 200, 200,"DIC (µmol kg  )",1390,2060) +
+              theme(legend.position = "none",
+                  axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank())
+  dic_s4 = plotcontour(s4, "30 June\n12:43-13:27", "DIC", "DIC", 200, 200,"DIC (µmol kg  )",1390,2060) +
+              theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank(),
+                    legend.position = "none")
+  
+  # TA
+  TA_s1 = plotcontour(s1, "26 June\n15:13-16:21", "TA_meas", "TA", 200, 200,"TA (µmol kg  )",2100,2300) +
+            theme(axis.title.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                              barheight = 6, 
+                                                                              title.position = "right",
+                                                                              title.hjust = -.25))
+  TA_s2 = plotcontour(s2, "27 June\n11:04-11:56", "TA_meas", "TA", 200, 200,"TA (µmol kg  )",2100,2300) +
+              theme(legend.position = "none",
+                    axis.title.y=element_blank(),
+                    axis.text.y=element_blank(),
+                    axis.title.x=element_blank())
+  TA_s3 = plotcontour(s3, "30 June\n06:34-7:15", "TA_meas", "TA", 200, 200,"TA (µmol kg  )",2100,2300) +
+              theme(legend.position = "none",
+                    axis.title.y=element_blank(),
+                    axis.title.x=element_blank())
+  TA_s4 = plotcontour(s4, "30 June\n12:43-13:27", "TA_meas", "TA", 200, 200,"TA (µmol kg  )",2100,2300) +
+              theme(axis.title.y=element_blank(),
+                    axis.text.y=element_blank(),
+                    axis.title.x=element_blank(),
+                    legend.position = "none")
+  # pH
+  pH_s1 = plotcontour(s1, "26 June\n15:13-16:21", "pH_TA_DIC", "pH", 200, 200,"pH  ",7.7,8.5) +
+            theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                              barheight = 6, 
+                                                                              title.position = "right",
+                                                                              title.hjust = -.25))
+  pH_s2 = plotcontour(s2, "27 June\n11:04-11:56", "pH_TA_DIC", "pH", 200, 200,"pH  ",7.7,8.5) +
+              theme(legend.position = "none",
+                  axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank())
+  pH_s3 = plotcontour(s3, "30 June\n06:34-7:15", "pH_TA_DIC", "pH", 200, 200,"pH  ",7.7,8.5) +
+              theme(legend.position = "none",
+                  axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank())
+  pH_s4 = plotcontour(s4, "30 June\n12:43-13:27", "pH_TA_DIC", "pH", 200, 200,"pH  ",7.7,8.5) +
+              theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.title.y=element_blank(),
+                  axis.text.y=element_blank(),
+                  legend.position = "none")
+  # All together
+  (T_s3 | T_s2 | T_s4 | T_s1)/
+  (do_s3 | do_s2 | do_s4 | do_s1)/
+  (pH_s3 | pH_s2 | pH_s4 | pH_s1)/
+  (dic_s3 | dic_s2 | dic_s4 | dic_s1)/
+  (TA_s3 | TA_s2 | TA_s4 | TA_s1)
+
+```
+
+## FIGURE S1 - SPATIAL SURVEY GRADIENTS
+
+```{r Spatial Survey Contour Plots - Gradients, echo=FALSE}
+## Make color palette
+  pal_spg = paletteer_c("ggthemes::Orange-Blue-White Diverging",30)[2:28]
+
+## Make adjusted function for gradient contour plots
+  plotcontour_g <- function(s, surveyname, var, varname, gridx, gridy, legendtitle, a, b) {
+    ## Interpolate data
+    fld <- with(s, interp(x = s[["Lon"]], y = s[["Lat"]], z = s[[var]], nx=gridx, ny=gridy))
+    
+    ## prepare data in long format
+    df <- melt(fld$z, na.rm = T)
+    names(df) <- c("Lon", "Lat", varname)
+    df$Lon <- fld$x[df$Lon]
+    df$Lat <- fld$y[df$Lat]
+    df[[varname]] = as.numeric(df[[varname]])
+    
+    ## Make continuous palette
+    pal <- wes_palette("Zissou1", 100, type = "continuous")
+    
+   g <- ggplot() +
+        # Plot contour plot
+        geom_tile(data = df, aes_string(x = "Lon", y = "Lat", fill = varname)) + 
+        #scale_fill_gradientn(colours = pal,limits = c(a,b))+
+        #scale_fill_gradient2(low = "#007FFB", mid = "white", high = "#FE100C", midpoint = 0,limits = c(a,b))+
+        #scale_fill_paletteer_c("ggthemes::Orange-Blue-White Diverging")+
+        scale_fill_gradientn(colors = pal_spg,limits = c(a,b))+
+        # Adjust contour colormap orientation, etc.
+        guides(fill = guide_colourbar(title.position = "right", title.hjust = 0.5, barwidth = 1, barheight = 12),
+              colour = guide_legend(reverse=T))+
+        # Plot bottle sample locations in black
+        geom_point(data = s, aes(x = Lon, y = Lat), color = "black")+
+        # Plot coral core sample locations as black open circles
+        geom_point(data = coreloc, aes(x = Lon, y = Lat), color = "light grey", shape = "o", size = 3)+
+        theme_classic() +
+        theme(legend.title = element_text(size = 10, angle = -90),
+              axis.text = element_text(size = 8, color = "black"),
+              axis.title.x = element_text(size = 10, vjust = -0.5),
+              axis.title.y = element_text(size = 10, vjust = 0.2),
+              legend.text = element_text(size = 10),
+              plot.title = element_text(face = "bold", hjust = 0.5),
+              axis.text.x = element_text(colour="black"), 
+              axis.text.y = element_text(colour="black"),
+              axis.ticks = element_line(color = "black"))+
+              labs(fill = legendtitle) + 
+        scale_y_continuous("Latitude", labels = function(Lat) paste0(sprintf("%.3f", Lat)), breaks = c(20.707,20.710,20.713,20.716))+
+        scale_x_continuous("Longitude", labels = function(Lon) paste0(sprintf("%.3f", Lon)),breaks = c(116.719, 116.723, 116.727))
+  }
+
+## Contour Plots: Emphasize Gradient (Anomaly from means) 
+  ## Extract the anomaly from the mean of just that day's values (mean of each survey not all)
+        
+      # Calculate means of all parameters for each station across each survey
+      s1_means = s1 %>% 
+                  dplyr::summarize(meanT = mean(Temp),
+                                   meanS = mean(Sal),
+                                   meanDO = mean(DO_umolkg),
+                                   meanDOsat = mean(DO_percent),
+                                   meanpH = mean(pH_TA_DIC),
+                                   meanDIC = mean(DIC),
+                                   meanTA = mean(TA_meas))
+      s2_means = s2 %>% 
+                    dplyr::summarize(meanT = mean(Temp),
+                                     meanS = mean(Sal),
+                                     meanDO = mean(DO_umolkg),
+                                     meanDOsat = mean(DO_percent),
+                                     meanpH = mean(pH_TA_DIC),
+                                     meanDIC = mean(DIC),
+                                     meanTA = mean(TA_meas))
+      s3_means = s3 %>% 
+                    dplyr::summarize(meanT = mean(Temp),
+                                     meanS = mean(Sal),
+                                     meanDO = mean(DO_umolkg),
+                                     meanDOsat = mean(DO_percent),
+                                     meanpH = mean(pH_TA_DIC),
+                                     meanDIC = mean(DIC),
+                                     meanTA = mean(TA_meas))
+      s4_means = s4 %>% 
+                    dplyr::summarize(meanT = mean(Temp),
+                                     meanS = mean(Sal),
+                                     meanDO = mean(DO_umolkg),
+                                     meanDOsat = mean(DO_percent),
+                                     meanpH = mean(pH_TA_DIC),
+                                     meanDIC = mean(DIC),
+                                     meanTA = mean(TA_meas))
+      
+      # Now calculate the differences
+      s1_delta = s1 %>% 
+                     dplyr::summarize(dTemp = Temp - s1_means$meanT,
+                                      dSal = Sal - s1_means$meanS,
+                                      dDO = DO_umolkg - s1_means$meanDO,
+                                      dDOsat = DO_percent - s1_means$meanDOsat,
+                                      dpH = pH_TA_DIC - s1_means$meanpH,
+                                      dDIC = DIC - s1_means$meanDIC,
+                                      dTA = TA_meas - s1_means$meanTA,
+                                      Lat = Lat,
+                                      Lon = Lon,
+                                      Station = Station)
+      s2_delta = s2 %>% 
+                     dplyr::summarize(dTemp = Temp - s2_means$meanT,
+                                      dSal = Sal - s2_means$meanS,
+                                      dDO = DO_umolkg - s2_means$meanDO,
+                                      dDOsat = DO_percent - s2_means$meanDOsat,
+                                      dpH = pH_TA_DIC - s2_means$meanpH,
+                                      dDIC = DIC - s2_means$meanDIC,
+                                      dTA = TA_meas - s2_means$meanTA,
+                                      Lat = Lat,
+                                      Lon = Lon,
+                                      Station = Station)
+      s3_delta = s3 %>% 
+                     dplyr::summarize(dTemp = Temp - s3_means$meanT,
+                                      dSal = Sal - s3_means$meanS,
+                                      dDO = DO_umolkg - s3_means$meanDO,
+                                      dDOsat = DO_percent - s3_means$meanDOsat,
+                                      dpH = pH_TA_DIC - s3_means$meanpH,
+                                      dDIC = DIC - s3_means$meanDIC,
+                                      dTA = TA_meas - s3_means$meanTA,
+                                      Lat = Lat,
+                                      Lon = Lon,
+                                      Station = Station)
+      s4_delta = s4 %>% 
+                     dplyr::summarize(dTemp = Temp - s4_means$meanT,
+                                      dSal = Sal - s4_means$meanS,
+                                      dDO = DO_umolkg - s4_means$meanDO,
+                                      dDOsat = DO_percent - s4_means$meanDOsat,
+                                      dpH = pH_TA_DIC - s4_means$meanpH,
+                                      dDIC = DIC - s4_means$meanDIC,
+                                      dTA = TA_meas - s4_means$meanTA,
+                                      Lat = Lat,
+                                      Lon = Lon,
+                                      Station = Station)
+        
+## Plot Gradients using daily anomaly
+            # Temperature
+              T_s1_d = plotcontour_g(s1_delta, "26 June\n15:13-16:21", "dTemp", "T", 200, 200,"Temperature (ºC)",-2.7,2.7) + 
+                        theme(axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                                          barheight = 6, 
+                                                                                          title.position = "right",
+                                                                                          title.hjust = -.25))
+              T_s2_d = plotcontour_g(s2_delta, "27 June\n11:04-11:56", "dTemp", "T", 200, 200,"Temperature (ºC)",-2.7,2.7) + 
+                        theme(legend.position = "none",
+                              axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())
+              T_s3_d = plotcontour_g(s3_delta, "30 June\n06:34-7:15", "dTemp", "T", 200, 200,"Temperature (ºC)",-2.7,2.7) + 
+                        theme(legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.title.x=element_blank(),
+                              axis.text.x=element_blank())
+              T_s4_d = plotcontour_g(s4_delta, "30 June\n12:43-13:27", "dTemp", "T", 200, 200,"Temperature (ºC)",-2.7,2.7) + 
+                        theme(axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())
+                
+              # Oxygen
+              do_s1_d = plotcontour_g(s1_delta, "26 June\n15:13-16:21", "dDO", "DO", 200, 200,"DO (µmol kg  )",-70,70) + 
+                        theme(axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                                          barheight = 6, 
+                                                                                          title.position = "right",
+                                                                                          title.hjust = -.25))
+              do_s2_d = plotcontour_g(s2_delta, "27 June\n11:04-11:56", "dDO", "DO", 200, 200,"DO (µmol kg  )",-70,70) + 
+                        theme(legend.position = "none",
+                              axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())
+              do_s3_d = plotcontour_g(s3_delta, "30 June\n06:34-7:15", "dDO", "DO", 200, 200,"DO (µmol kg  )",-70,70) + 
+                        theme(legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.title.x=element_blank(),
+                              axis.text.x=element_blank())
+              do_s4_d = plotcontour_g(s4_delta, "30 June\n12:43-13:27", "dDO", "DO", 200, 200,"DO (µmol kg  )",-70,70) + 
+                        theme(axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())
+              
+              # DIC
+              dic_s1_d = plotcontour_g(s1_delta, "26 June\n15:13-16:21", "dDIC", "DIC", 200, 200,"DIC (µmol kg  )",-205,205) +  
+                          theme(axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                                          barheight = 6, 
+                                                                                          title.position = "right",
+                                                                                          title.hjust = -.25))
+              dic_s2_d = plotcontour_g(s2_delta, "27 June\n11:04-11:56", "dDIC", "DIC", 200, 200,"DIC (µmol kg  )",-205,205) + 
+                          theme(legend.position = "none",
+                              axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())
+              dic_s3_d = plotcontour_g(s3_delta, "30 June\n06:34-7:15", "dDIC", "DIC", 200, 200,"DIC (µmol kg  )",-205,205) + 
+                          theme(legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.title.x=element_blank(),
+                              axis.text.x=element_blank())
+              dic_s4_d = plotcontour_g(s4_delta, "30 June\n12:43-13:27", "dDIC", "DIC", 200, 200,"DIC (µmol kg  )",-205,205) + 
+                          theme(axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())
+              
+              # TA
+              TA_s1_d = plotcontour_g(s1_delta, "26 June\n15:13-16:21", "dTA", "TA", 200, 200,"TA (µmol kg  )",-90,90) +  
+                          theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              axis.title.x=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                                          barheight = 6, 
+                                                                                          title.position = "right",
+                                                                                          title.hjust = -.25))
+              TA_s2_d = plotcontour_g(s2_delta, "27 June\n11:04-11:56", "dTA", "TA", 200, 200,"TA (µmol kg  )",-90,90) + 
+                          theme(legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              axis.title.x=element_blank())
+              TA_s3_d = plotcontour_g(s3_delta, "30 June\n06:34-7:15", "dTA", "TA", 200, 200,"TA (µmol kg  )",-90,90) + 
+                          theme(legend.position = "none",
+                                axis.title.y=element_blank(),
+                              axis.title.x=element_blank())
+              TA_s4_d = plotcontour_g(s4_delta, "30 June\n12:43-13:27", "dTA", "TA", 200, 200,"TA (µmol kg  )",-90,90) + 
+                          theme(legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              axis.title.x=element_blank()) 
+              # pH
+              pH_s1_d = plotcontour_g(s1_delta, "26 June\n15:13-16:21", "dpH", "pH", 200, 200,"pH  ",-0.17,0.17) +  
+                          theme(axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())+ guides(fill = guide_colourbar(barwidth = 1, 
+                                                                                          barheight = 6, 
+                                                                                          title.position = "right",
+                                                                                          title.hjust = 0.5))
+              pH_s2_d = plotcontour_g(s2_delta, "27 June\n11:04-11:56", "dpH", "pH", 200, 200,"pH  ",-0.17,0.17) + 
+                          theme(legend.position = "none",
+                              axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())
+              pH_s3_d = plotcontour_g(s3_delta, "30 June\n06:34-7:15", "dpH", "pH", 200, 200,"pH  ",-0.17,0.17) + 
+                          theme(legend.position = "none",
+                              axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              axis.title.y=element_blank())
+              pH_s4_d = plotcontour_g(s4_delta, "30 June\n12:43-13:27", "dpH", "pH", 200, 200,"pH  ",-0.17,0.17) + 
+                          theme(axis.title.x=element_blank(),
+                              axis.text.x=element_blank(),
+                              legend.position = "none",
+                              axis.title.y=element_blank(),
+                              axis.text.y=element_blank())
+              
+## Plot all together
+
+(T_s3_d | T_s2_d | T_s4_d | T_s1_d)/
+(do_s3_d | do_s2_d | do_s4_d | do_s1_d)/
+(pH_s3_d | pH_s2_d | pH_s4_d | pH_s1_d)/
+(dic_s3_d | dic_s2_d | dic_s4_d | dic_s1_d)/
+(TA_s3_d | TA_s2_d | TA_s4_d | TA_s1_d)
+              
+```
+
+## FIGURE 3 - SPATIAL SURVEY BOX PLOTS + STATS
+
+```{r Spatial Survey: Box/Scatter Plots of Gradients}
+## Boxplot of parameters by distance from shore grouping
+  ## Make boxplot
+  core_pal = c("#79ad41","#ddc000","#34b6c6","#4063a3")
+
+  gT = botdat %>% filter(Survey == 1 | Survey == 3) %>% 
+       ggplot()+
+       geom_boxplot(aes(x = Location, y = Temp, color = Location, fill = Location), alpha = 0.5)+
+       geom_point(aes(x = Location, y = Temp, color = Location))+
+       facet_wrap(~Survey_ID, nrow = 1, ncol = 4) +
+       #facet_wrap(~Survey_ID, nrow = 1, ncol = 4, scales = "free") +
+       labs(x = "", y = "Temperature (ºC)") +
+       theme_bw() + theme(legend.position = "none",
+                          axis.text.x = element_blank(),
+                          axis.line = element_line(colour = "black"), 
+                          axis.text.y = element_text(colour="black"),
+                          axis.ticks = element_line(colour = "black")) + 
+       scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal)
+  
+  gDO = botdat %>% filter(Survey == 1 | Survey == 3) %>% 
+       ggplot()+
+       geom_boxplot(aes(x = Location, y = DO_umolkg, color = Location, fill = Location), alpha = 0.5)+
+       geom_point(aes(x = Location, y = DO_umolkg, color = Location))+
+       facet_wrap(~Survey_ID, nrow = 1, ncol = 4) +
+       #facet_wrap(~Survey_ID, nrow = 1, ncol = 4, scales = "free") +
+       labs(x = "", y = "DO (µmol/kg)") +
+       theme_bw() + theme(legend.position = "none",
+                          strip.background = element_blank(),
+                          axis.text.x = element_blank(),
+                          strip.text = element_blank(),
+                          axis.line = element_line(colour = "black"),
+                          axis.text.y = element_text(colour="black"),
+                          axis.ticks = element_line(colour = "black")) + 
+       scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal)
+  
+  gpH = botdat %>% filter(Survey == 1 | Survey == 3) %>% 
+       ggplot()+
+       geom_boxplot(aes(x = Location, y = pH_TA_DIC, color = Location, fill = Location), alpha = 0.5)+
+       geom_point(aes(x = Location, y = pH_TA_DIC, color = Location))+
+       facet_wrap(~Survey_ID, nrow = 1, ncol = 4) +
+       #facet_wrap(~Survey_ID, nrow = 1, ncol = 4, scales = "free") +
+       labs(x = "", y = "pH_T") +
+       theme_bw() + theme(legend.position = "none",
+                          strip.background = element_blank(),
+                          axis.text.x = element_blank(),
+                          strip.text = element_blank(),
+                          axis.line = element_line(colour = "black"),
+                          axis.text.y = element_text(colour="black"),
+                          axis.ticks = element_line(colour = "black")) + 
+       scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal)
+  
+  gDIC = botdat %>% filter(Survey == 1 | Survey == 3) %>% 
+       ggplot()+
+       geom_boxplot(aes(x = Location, y = DIC, color = Location, fill = Location), alpha = 0.5)+
+       geom_point(aes(x = Location, y = DIC, color = Location))+
+       facet_wrap(~Survey_ID, nrow = 1, ncol = 4) +
+       #facet_wrap(~Survey_ID, nrow = 1, ncol = 4, scales = "free") +
+       labs(x = "", y = "DIC (µmol/kg)") +
+       theme_bw() + theme(legend.position = "none",
+                          strip.background = element_blank(),
+                          axis.text.x = element_blank(),
+                          strip.text = element_blank(),
+                          axis.line = element_line(colour = "black"), 
+                          axis.text.y = element_text(colour="black"),
+                          axis.ticks = element_line(colour = "black")) + 
+       scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal)
+  
+  gTA = botdat %>% filter(Survey == 1 | Survey == 3) %>% 
+       ggplot()+
+       geom_boxplot(aes(x = Location, y = TA_meas, color = Location, fill = Location), alpha = 0.5)+
+       geom_point(aes(x = Location, y = TA_meas, color = Location))+
+       facet_wrap(~Survey_ID, nrow = 1, ncol = 4) +
+       #facet_wrap(~Survey_ID, nrow = 1, ncol = 4, scales = "free") +
+       labs(x = "", y = "TA (µmol/kg)") +
+       theme_bw() + theme(legend.position = "none",
+                          strip.background = element_blank(),
+                          strip.text = element_blank(),
+                          axis.line = element_line(colour = "black"),
+                          axis.text.x = element_text(colour="black"), 
+                          axis.text.y = element_text(colour="black"),
+                          axis.ticks = element_line(colour = "black")) + 
+       scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal)
+
+# Plot all together:
+  gT/gDO/gpH/gDIC/gTA
+
+```
+
+```{r Statistics for Location Comparisons Within Surveys}
+## Stats to compare means between locations on each survey 
+  library(nlme); library(emmeans); library(car)
+  
+  # Run ANOVA for each parameter and each survey/location
+    aovT = aov(Temp ~ Location*Survey_ID, data=botdat)
+    aovS = aov(Sal ~ Location*Survey_ID, data=botdat)
+    aovDO = aov(DO_umolkg ~ Location*Survey_ID, data=botdat)
+    aovpH = aov(pH_TA_DIC ~ Location*Survey_ID, data=botdat)
+    aovDIC = aov(DIC ~ Location*Survey_ID, data=botdat)
+    aovTA = aov(TA_meas ~ Location*Survey_ID, data=botdat)
+  
+  # Check normality
+    # Histograms
+    # hist(aovT$residuals)
+    # hist(aovS$residuals)
+    # hist(aovDO$residuals)
+    # hist(aovpH$residuals)
+    # hist(aovDIC$residuals)
+    # hist(aovTA$residuals)
+    
+    # Q-Q Plots
+    # library(car)
+    # qqPlot(aovT$residuals, id = FALSE) # id = FALSE to remove point identification
+    # qqPlot(aovS$residuals, id = FALSE) # not great, but salinity is quite constant so not much variation
+    # qqPlot(aovDO$residuals, id = FALSE)
+    # qqPlot(aovpH$residuals, id = FALSE)
+    # qqPlot(aovDIC$residuals, id = FALSE)
+    # qqPlot(aovTA$residuals, id = FALSE)
+    
+    # Shapiro Tests
+    shapiro.test(aovT$residuals) #signif
+    shapiro.test(aovS$residuals) #signif
+    shapiro.test(aovDO$residuals)
+    shapiro.test(aovpH$residuals)
+    shapiro.test(aovDIC$residuals)
+    shapiro.test(aovTA$residuals) #signif
+    # temp, sal, TA signif, but ANOVAs are robust to small deviations in normality so will proceed
+    
+  # Check homogeneity of variances - Levene's Test
+    leveneTest(Temp ~ Location*Survey_ID, data=botdat)
+    leveneTest(Sal ~ Location*Survey_ID, data=botdat) # signif
+    leveneTest(DO_umolkg ~ Location*Survey_ID, data=botdat)
+    leveneTest(pH_TA_DIC ~ Location*Survey_ID, data=botdat)
+    leveneTest(DIC ~ Location*Survey_ID, data=botdat)
+    leveneTest(TA_meas ~ Location*Survey_ID, data=botdat)
+    # all but salinity meet assumption, so will exclude those results
+    
+  # Post-hoc test to look for differences between paired locations (use emT$contrasts to view)
+  emT = emmeans(aovT, pairwise ~ Location * Survey_ID, adjust = "tukey")
+  emT = as.data.frame(emT$contrasts)
+  emS = emmeans(aovS, pairwise ~ Location * Survey_ID, adjust = "tukey")
+  emS = as.data.frame(emS$contrasts)
+  emDO = emmeans(aovDO, pairwise ~ Location * Survey_ID, adjust = "tukey")
+  emDO = as.data.frame(emDO$contrasts)
+  empH = emmeans(aovpH, pairwise ~ Location * Survey_ID, adjust = "tukey")
+  empH = as.data.frame(empH$contrasts)
+  emDIC = emmeans(aovDIC, pairwise ~ Location * Survey_ID, adjust = "tukey")
+  emDIC = as.data.frame(emDIC$contrasts)
+  emTA = emmeans(aovTA, pairwise ~ Location * Survey_ID, adjust = "tukey")
+  emTA = as.data.frame(emTA$contrasts)
+
+## Filter out to look for significance and only combinations of pairs on same survey day
+
+  # Make a function to make it easier to see comparisons that are significant
+  filter_em = function(em){
+  em = em %>% filter(p.value <= 0.05) %>% 
+            filter(contrast == "Nearshore Early Morning - Mid Early Morning" |
+                   contrast == "Nearshore Early Morning - Outer Early Morning" |
+                   contrast == "Nearshore Early Morning - Outside Early Morning" |
+                   contrast == "Mid Early Morning - Outer Early Morning" |
+                   contrast == "Mid Early Morning - Outside Early Morning" |
+                   contrast == "Outer Early Morning - Outside Early Morning" |
+                   
+                   contrast == "Nearshore Mid Morning - Mid Mid Morning" |
+                   contrast == "Nearshore Mid Morning - Outer Mid Morning" |
+                   contrast == "Nearshore Mid Morning - Outside Mid Morning" |
+                   contrast == "Mid Mid Morning - Outer Mid Morning" |
+                   contrast == "Mid Mid Morning - Outside Mid Morning" |
+                   contrast == "Outer Mid Morning - Outside Mid Morning" |
+                   
+                   contrast == "Nearshore Mid-day - Mid Mid-day" |
+                   contrast == "Nearshore Mid-day - Outer Mid-day" |
+                   contrast == "Nearshore Mid-day - Outside Mid-day" |
+                   contrast == "Mid Mid-day - Outer Mid-day" |
+                   contrast == "Mid Mid-day - Outside Mid-day" |
+                   contrast == "Outer Mid-day - Outside Mid-day" |
+                   
+                   contrast == "Nearshore Late Afternoon - Mid Late Afternoon" |
+                   contrast == "Nearshore Late Afternoon - Outer Late Afternoon" |
+                   contrast == "Nearshore Late Afternoon - Outside Late Afternoon" |
+                   contrast == "Mid Late Afternoon - Outer Late Afternoon" |
+                   contrast == "Mid Late Afternoon - Outside Late Afternoon" |
+                   contrast == "Outer Late Afternoon - Outside Late Afternoon")
+  }
+  
+  # Perform filtering to get p-values reported in Figure 3
+    emT2 = filter_em(emT)
+    emS2 = filter_em(emS) #none
+    emDO2 = filter_em(emDO)
+    empH2 = filter_em(empH)
+    emDIC2 = filter_em(emDIC)
+    emTA2 = filter_em(emTA) #none
+```
+
+## FIGURE 4 - PROPERTY-PROPERTY PLOTS
+```{r Salinity Normalize TA and DIC + Calculate nDIC_NCP}
+## Salinity Normalization
+
+  # Find mean Sal across all surveys
+  meanS = mean(botdat$Sal)
+
+  # Find mean T across all surveys
+  meanT = mean(botdat$Temp)
+
+  # Calculate salinity normalized TA and DIC:
+      # TA_norm = TA * (meanS / S)
+      # DIC_norm = TA * (meanS / S)
+
+  botdat = botdat %>% mutate(nTA = TA_meas *(meanS/Sal),
+                             nDIC = DIC *(meanS/Sal),
+                             npH = pH_TA_DIC*(meanS/Sal))
+  
+  # Calculate mean nTA for NCP calc:
+  meannTA = mean(botdat$nTA)
+  
+  # Add column of nDIC_NCP
+    # nDIC_NCP = nDIC + (mean_nTA - nTA)/2
+  
+  botdat = botdat %>% mutate(nDIC_NCP = nDIC + ((meannTA - nTA)/2))
+```
+
+```{r Prepare data for plotting P-P plots with contour lines}
+# Create some fake data with range of TA and DIC values (every 10 umol/kg) that we're interested in
+    nDIC2 = seq(1350,2050,10)
+    nTA2 = seq(2000,2700,10)
+    DO2 = seq(0,700,10)
+    nDIC_NCP2 = seq(1350,2050,10)
+    
+    # Make a blank matrix of NA to fill in the pH from CO2sys
+    npH=matrix(NA,71,71)
+
+    # Create matrix of pH values for every possible combination of TA and DIC within range we're interested in (uses mean S and T values)   
+    library(seacarb)
+    
+    for (i in seq_along(nDIC2)){
+      for (j in seq_along(nTA2)){
+        npH[i,j]=carbb(15, nTA2[j]*10^-6, nDIC2[i]*10^-6, S=meanS, T=meanT, Patm=0, P=0, Pt=0, Sit=0, 
+                    k1k2="x", kf="x", ks="d", pHscale="T", b="u74", gas="potential", badd=0, 
+                    warn="n", eos = "teos10", long = 116.7245, lat = 20.71522)$pH
+      }
+    }
+
+## Prepare to plot TA vs DIC with pH contour lines 
+    # Create all of the combinations of nDIC and nTA and relabel columns 
+    D<-expand.grid(nDIC2, nTA2)
+    names(D)<-c("nDIC", "nTA")
+    
+    # Convert npH matrix from a square matrix to a single vector
+    D$npH<-matrix(npH, ncol=1)
+    
+## Prepare to plot DO vs DIC with pH contour lines  
+      
+    # Create all of the combinations of nDIC and nDO and relabel columns 
+    D2 <-expand.grid(nDIC2, DO2)
+    names(D2)<-c("nDIC", "DO")
+    
+    # Convert npH matrix from a square matrix to a single vector
+    D2$npH<-matrix(npH, ncol=1)
+    
+## Prepare to plot DO vs DIC(NCP) with pH contour lines
+    # Create all of the combinations of nDIC and DO and relabel columns 
+    D3 <-expand.grid(nDIC_NCP2, DO2)
+    names(D3)<-c("nDIC_NCP", "DO")
+    
+    # Convert npH matrix from a square matrix to a single vector
+    D3$npH<-matrix(npH, ncol=1)
+    
+## Prepare to plot TA vs DIC(NCP) with pH contour lines 
+    # Create all of the combinations of nDIC and nDO and relabel columns 
+    D4 <-expand.grid(nDIC_NCP2, nTA2)
+    names(D4)<-c("nDIC_NCP", "nTA")
+    
+    # Convert npH matrix from a square matrix to a single vector
+    D4$npH<-matrix(npH, ncol=1)
+```
+
+```{r TABLE S2 - Compute Linear Regressions for each P-P Plot + Means with SD}
+## Compute linear regressions    
+library(lmodel2)
+
+  # Linear regression of nDIC and nTA
+      lm_nDICnTA = botdat %>% 
+                    summarize(s = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,3],
+                              int = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,2],
+                              r2 = lmodel2(nTA~nDIC, nperm = 100)$rsquare,
+                              pval = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,5])
+
+     # Linear regression of nDIC and nTA by survey
+      lm_nDICnTA_survey = botdat %>% 
+                    dplyr::group_by(Survey) %>% 
+                    dplyr::summarize(s = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,3],
+                              int = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,2],
+                              r2 = lmodel2(nTA~nDIC, nperm = 100)$rsquare,
+                              pval = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,5])
+      
+  # Linear regression of nDIC and DO
+      lm_nDICDO = botdat %>% 
+                    summarize(s = lmodel2(DO_umolkg~nDIC, nperm = 100)$regression.results[1,3],
+                              int = lmodel2(DO_umolkg~nDIC, nperm = 100)$regression.results[1,2],
+                              r2 = lmodel2(DO_umolkg~nDIC, nperm = 100)$rsquare,
+                              pval = lmodel2(DO_umolkg~nDIC, nperm = 100)$regression.results[1,5])
+      
+  # Linear regression of nDIC_NCP and nTA
+      lm_nDIC_NCP_nTA = botdat %>% 
+                    summarize(s = lmodel2(nTA~nDIC_NCP, nperm = 100)$regression.results[1,3],
+                              int = lmodel2(nTA~nDIC_NCP, nperm = 100)$regression.results[1,2],
+                              r2 = lmodel2(nTA~nDIC_NCP, nperm = 100)$rsquare,
+                              pval = lmodel2(nTA~nDIC_NCP, nperm = 100)$regression.results[1,5])
+      
+  # Linear regression of nDIC_NCP and nDO
+      lm_nDIC_NCP_DO = botdat %>% 
+                    summarize(s = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,3],
+                              int = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,2],
+                              r2 = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$rsquare,
+                              pval = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,5])
+      
+      # Linear regression of nDIC_NCP and nDO by survey
+      lm_nDIC_NCP_DO_survey = botdat %>% 
+                                dplyr::group_by(Survey) %>% 
+                                dplyr::summarize(s = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,3],
+                                          int = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,2],
+                                          r2 = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$rsquare,
+                                          pval = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,5])
+      
+## Find mean and SD across all surveys to plot as point with error bars
+  nDICTA = botdat %>% summarize(mean_nDIC = mean(nDIC),
+                                sd_nDIC = sd(nDIC),
+                                mean_nTA = mean(nTA),
+                                sd_nTA = sd(nTA),
+                                mean_DO = mean(DO_umolkg),
+                                sd_DO = sd(DO_umolkg),
+                                mean_nDIC_NCP = mean(nDIC_NCP),
+                                sd_nDIC_NCP = sd(nDIC_NCP))      
+```
+
+```{r Create Plots for Figure 4}
+
+## Create color palettes for plots
+  library(metR)
+  pal = wes_palette("Zissou1", 100, type = "continuous")
+  pal4 = c("#e7daff","#bc9ff5","#9c5cda","#6545a4")
+
+## PLOT nTA vs nDIC
+  
+  # Plot nTA vs nDIC -- colored by survey (shape = location)    
+    pp  = ggplot()+
+            # Plot pH contours
+            metR::geom_contour2(data = D, aes(x=nDIC, y=nTA ,z=npH,label =  round(..level..,3)), 
+                                color = "grey", alpha = 0.9, label_size = 9)+
+            # Plot linear regression line
+            geom_abline(data = lm_nDICnTA, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed")+
+            # Plot nTA and nDIC data points
+            geom_point(data = botdat, aes(x = nDIC, y = nTA, color = Survey_ID, shape = Location), size = 8)+
+            # Plot mean nDIC, nTA point and add error bars of 1 SD in both directions
+            geom_point(data = nDICTA, aes(x = mean_nDIC, y = mean_nTA))+
+            geom_errorbar(data = nDICTA, aes(x = mean_nDIC, ymin = mean_nTA-sd_nTA, ymax = mean_nTA+sd_nTA), 
+                          width=.2, position=position_dodge(.9))+ 
+            geom_errorbar(data = nDICTA, aes(y = mean_nTA, xmin = mean_nDIC-sd_nDIC, xmax = mean_nDIC+sd_nDIC), 
+                          width=.2, position=position_dodge(.9))+ 
+            # Adjust various plot details
+            ylim(2000, 2700) + xlim(1350, 2050) + theme_classic() + coord_fixed() +
+            scale_shape_manual(values=c(19, 15, 17, 18))  +
+            labs(x = "nDIC (µmol/kg)", y = "nTA (µmol/kg)", color = "Survey") +
+            theme(axis.text = element_text(color="black", size = 20),
+                  legend.position = c(0.55,0.9),
+                  legend.direction = "horizontal",
+                  panel.background = element_blank(),
+                  axis.title.x = element_text(colour="black", size = 20, face = "bold"), 
+                  axis.title.y = element_text(colour="black", size = 20, face = "bold"))+
+            # Colors of plotted nTA and nDIC data - here, shades of purple for time of survey  
+            scale_color_manual(values = pal4)  
+
+  # Plot nTA vs nDIC -- colored by pH (shape = location)
+    pp_pH = ggplot()+
+              # Plot pH contours
+              metR::geom_contour2(data = D, aes(x=nDIC, y=nTA ,z=npH,label =  round(..level..,3)), 
+                                  color = "grey", alpha = 0.9, label_size = 9)+
+              # Plot linear regression line
+              geom_abline(data = lm_nDICnTA, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
+              # Plot nTA and nDIC data points
+              geom_point(data = botdat, aes(x = nDIC, y = nTA, color = pH_TA_DIC, shape = Location), size = 8)+
+              # Plot mean nDIC, nTA point and add error bars of 1 SD in both directions
+              geom_point(data = nDICTA, aes(x = mean_nDIC, y = mean_nTA))+
+              geom_errorbar(data = nDICTA, aes(x = mean_nDIC, ymin = mean_nTA-sd_nTA, ymax = mean_nTA+sd_nTA), width=.2, position=position_dodge(.9))+ 
+              geom_errorbar(data = nDICTA, aes(y = mean_nTA, xmin = mean_nDIC-sd_nDIC, xmax = mean_nDIC+sd_nDIC), width=.2, position=position_dodge(.9))+ 
+              ylim(2000, 2700) + xlim(1350, 2050) + theme_classic() + coord_fixed() +  
+              # Adjust various plot details
+              scale_shape_manual(values=c(19, 15, 17, 18))  +
+                labs(x = "nDIC (µmol/kg)", y = "nTA (µmol/kg)", color = "pH") +
+                theme(axis.text = element_text(color="black", size = 20),
+                      legend.position = c(0.55,0.9),
+                      legend.direction = "horizontal",
+                      panel.background = element_blank(),
+                      axis.title.x = element_text(colour="black", size = 20, face = "bold"), 
+                      axis.title.y = element_text(colour="black", size = 20, face = "bold"))+
+              # Colors of plotted nTA and nDIC data - here, color by pH
+              scale_color_gradientn(colors = pal, guide = "colorbar", limits = c(7.7,8.5)) #reverse order of colors and set ticks min/max on colorbar
+
+  # Plot nTA vs nDIC -- colored by DO (shape = location)
+    pp_DO = ggplot()+
+              # Plot pH contours
+              metR::geom_contour2(data = D, aes(x=nDIC, y=nTA ,z=npH,label =  round(..level..,3)), 
+                                  color = "grey", alpha = 0.9, label_size = 9)+
+              # Plot linear regression line
+              geom_abline(data = lm_nDICnTA, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
+              # Plot nTA and nDIC data points
+              geom_point(data = botdat, aes(x = nDIC, y = nTA, color = DO_umolkg, shape = Location), size = 8)+
+              # Plot mean nDIC, nTA point and add error bars of 1 SD in both directions
+              geom_point(data = nDICTA, aes(x = mean_nDIC, y = mean_nTA))+
+              geom_errorbar(data = nDICTA, aes(x = mean_nDIC, ymin = mean_nTA-sd_nTA, ymax = mean_nTA+sd_nTA), width=.2, position=position_dodge(.9))+ 
+              geom_errorbar(data = nDICTA, aes(y = mean_nTA, xmin = mean_nDIC-sd_nDIC, xmax = mean_nDIC+sd_nDIC), width=.2, position=position_dodge(.9))+ 
+              # Adjust various plot details
+              ylim(2000, 2700) + xlim(1350, 2050) + theme_classic() + coord_fixed() +  
+              scale_shape_manual(values=c(19, 15, 17, 18))  +
+                labs(x = "nDIC (µmol/kg)", y = "nTA (µmol/kg)", color = "DO (µmol kg-1)") +
+                theme(axis.text = element_text(color="black", size = 20),
+                      legend.position = c(0.55,0.9),
+                      legend.direction = "horizontal",
+                      panel.background = element_blank(),
+                      axis.title.x = element_text(colour="black", size = 20, face = "bold"), 
+                      axis.title.y = element_text(colour="black", size = 20, face = "bold"))+
+              # Colors of plotted nTA and nDIC data - here, color by pH
+              scale_color_gradientn(colors = pal, guide = "colorbar", limits = c(50, 400))
+
+## Plot DO vs nDIC (NCP)
+  # DO vs nDIC_NCP (color by survey)
+    pp2 = ggplot()+
+            # Plot pH contours
+            metR::geom_contour2(data = D3, aes(x=nDIC_NCP, y=DO ,z=npH, label =  round(..level..,3)), 
+                                color = "grey", alpha = 0.9, label_size = 9)+
+            # Plot linear regression line
+            geom_abline(data = lm_nDIC_NCP_DO, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
+            # Plot DO and nDIC_NCP data points
+            geom_point(data = botdat, aes(x = nDIC_NCP, y = DO_umolkg, color = Survey_ID, shape = Location), size = 8)+
+            # Plot mean DO and nDIC_NCP point and add error bars of 1 SD in both directions
+            geom_point(data = nDICTA, aes(x = mean_nDIC_NCP, y = mean_DO))+
+            geom_errorbar(data = nDICTA, aes(x = mean_nDIC_NCP, ymin = mean_DO-sd_DO, ymax = mean_DO+sd_DO), width=.2, 
+                            position = position_dodge(.9))+ 
+            geom_errorbar(data = nDICTA, aes(y = mean_DO, xmin = mean_nDIC_NCP-sd_nDIC_NCP, xmax = mean_nDIC_NCP+sd_nDIC_NCP), width=.2, 
+                          position=position_dodge(.9))+ 
+            # Adjust various plot details
+            ylim(0, 700) + xlim(1350, 2050) + theme_classic() + coord_fixed() +
+            scale_shape_manual(values=c(19, 15, 17, 18))  +
+              labs(x = "nDIC_NCP (µmol/kg)", y = "DO (µmol/kg)", color = "Survey") +
+              theme(axis.text = element_text(color="black", size = 20),
+                    legend.position = "none",
+                    panel.background = element_blank(),
+                    axis.title.x = element_text(colour="black", size = 20, face = "bold"), 
+                    axis.title.y = element_text(colour="black", size = 20, face = "bold"))+
+            # Colors of plotted nTA and nDIC data - here, colored purple by time of survey
+            scale_color_manual(values = pal4) 
+    
+  # DO vs nDIC_NCP (color by DO)
+    pp3 = ggplot()+
+            # Plot pH contours
+            metR::geom_contour2(data = D3, aes(x=nDIC_NCP, y=DO ,z=npH,label =  round(..level..,3)), 
+                                color = "grey", alpha = 0.9, label_size = 9)+
+            # Plot linear regression line
+            geom_abline(data = lm_nDIC_NCP_DO, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
+            # Plot DO and nDIC_NCP data points
+            geom_point(data = botdat, aes(x = nDIC_NCP, y = DO_umolkg, color = pH_TA_DIC, shape = Location), size = 8)+
+            # Plot mean DO and nDIC_NCP point and add error bars of 1 SD in both directions
+            geom_point(data = nDICTA, aes(x = mean_nDIC_NCP, y = mean_DO))+
+            geom_errorbar(data = nDICTA, aes(x = mean_nDIC_NCP, ymin = mean_DO-sd_DO, ymax = mean_DO+sd_DO), width=.2, 
+                            position = position_dodge(.9))+ 
+            geom_errorbar(data = nDICTA, aes(y = mean_DO, xmin = mean_nDIC_NCP-sd_nDIC_NCP, xmax = mean_nDIC_NCP+sd_nDIC_NCP), width=.2, 
+                          position=position_dodge(.9))+ 
+            # Adjust various plot details
+            ylim(0, 700) + xlim(1350, 2050) + theme_classic() + coord_fixed() +
+            scale_shape_manual(values=c(19, 15, 17, 18)) + 
+              labs(x = "nDIC_NCP (µmol/kg)", y = "DO (µmol/kg)", color = "Survey") +
+              theme(axis.text = element_text(color="black", size = 20),
+                    legend.position = "none",
+                    panel.background = element_blank(),
+                    axis.title.x = element_text(colour="black", size = 20, face = "bold"), 
+                    axis.title.y = element_text(colour="black", size = 20, face = "bold"))+
+            # Colors of plotted nTA and nDIC data - here, colored by DO concentration
+            scale_color_gradientn(colors = rev(pal), guide = "colorbar", limits = c(7.7,8.5))
+  
+ 
+  
+(pp|pp_pH)/(pp2|pp3)
+
+```
+
+## FIGURE S2 C-F - IDRONAUT TIME SERIES
+
+```{r Time Series Plot}
+
+## Set color for rectangle shading nighttime on plot
+tscol = c("gray")
+
+## Load data --
+  DSHA_IDRO2 = read.csv('~/Documents/SIO/Dongsha 2018/Data/Dryad/idronaut.csv')
+  DSHA_IDRO2$DateTime <- as.POSIXct(DSHA_IDRO2$DateTime, format = "%m/%d/%Y %H:%M:%S", tz = "UTC")
+    
+  # Convert DO (uM) to DO (umol/kg)
+    # Create pressure variable using depth = pressure in dbar
+    DSHA_IDRO2$Pres = rep(0.5,nrow(DSHA_IDRO2))
+    # Calculate absolute salinity
+    DSHA_IDRO2$SA = gsw_SA_from_SP(DSHA_IDRO2$Sal,DSHA_IDRO2$Pres,116.721367,20.707417)
+    # Calculate conservative T
+    DSHA_IDRO2$CT = gsw_CT_from_t(DSHA_IDRO2$SA,DSHA_IDRO2$Temp,DSHA_IDRO2$Pres)
+    # Calculate density (kg/m3)
+    DSHA_IDRO2$dens = gsw_rho(DSHA_IDRO2$SA,DSHA_IDRO2$CT,DSHA_IDRO2$Pres)
+    # Convert mg/L to umol/kg
+    DSHA_IDRO2$DO_umolkg =((DSHA_IDRO2$O2ppm*(10^6))/31.98)/DSHA_IDRO2$dens
+    # Calculate DO saturation concentration (100% sat concentration)
+    DSHA_IDRO2$DOatsat = calcDOatsat_GG(DSHA_IDRO2$Temp,DSHA_IDRO2$Sal)
+    # Calculate DO sat corrected (%)
+    DSHA_IDRO2$DOsat = (DSHA_IDRO2$DO_umolkg/DSHA_IDRO2$DOatsat)*100
+    
+  # Convert pH (NBS scale) to pH (total scale): offset of -0.059 (difference between calibration sample and average of last two points from IDRO2)
+    DSHA_IDRO2$pH_T = DSHA_IDRO2$pH -0.059
+    
+  # Subset dataset to only segrass deployment
+    idro_sg = DSHA_IDRO2[130:839,]
+  
+### Plot only seagrass data ---
+  t = ggplot() +
+    # Nighttime boxes (19:00 to 05:30)
+    annotate("rect", ymin=28.5, ymax=32.4, xmin=as_datetime("2018-07-01 19:00:00"), xmax=as_datetime("2018-07-02 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=28.5, ymax=32.4, xmin=as_datetime("2018-07-02 19:00:00"), xmax=as_datetime("2018-07-03 05:30:00"),
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=28.5, ymax=32.4, xmin=as_datetime("2018-07-03 19:00:00"), xmax=as_datetime("2018-07-04 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=28.5, ymax=32.4, xmin=as_datetime("2018-07-04 19:00:00"), xmax=as_datetime("2018-07-05 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=28.5, ymax=32.4, xmin=as_datetime("2018-07-05 19:00:00"), xmax=as_datetime("2018-07-06 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=28.5, ymax=32.4, xmin=as_datetime("2018-07-06 19:00:00"), xmax=as_datetime("2018-07-07 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=28.5, ymax=32.4, xmin=as_datetime("2018-07-07 19:00:00"), xmax=as_datetime("2018-07-08 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=28.5, ymax=32.4, xmin=as_datetime("2018-07-08 19:00:00"), xmax=as_datetime("2018-07-08 19:28:00"), 
+             alpha=0.2, fill = tscol)+
+    # Plot time series from CTD
+    geom_line(data = idro_sg, aes(x = DateTime, y = Temp),linewidth = 1.5, color = "black")+
+    # Adjust plot
+    theme_classic() + ylim(28.5, 32.4)+
+    scale_x_datetime(date_breaks = "1 day", labels = date_format("%b %d"),expand = c(0, 0)) + 
+    ylab("Temp (ºC)") +  theme(axis.title.x=element_blank(),
+                               axis.text.x=element_blank(), 
+                               legend.position = c(0.70,0.95),
+                               axis.text = element_text(size = 12, color = "black"),
+                               axis.title.y = element_text(size = 12, face = "bold"),
+                               legend.text = element_text(size = 12))
+      
+  s = ggplot() +
+    # Nighttime boxes (19:00 to 05:30)
+    annotate("rect", ymin=23.5, ymax=34, xmin=as_datetime("2018-07-01 19:00:00"), xmax=as_datetime("2018-07-02 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=23.5, ymax=34, xmin=as_datetime("2018-07-02 19:00:00"), xmax=as_datetime("2018-07-03 05:30:00"),
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=23.5, ymax=34, xmin=as_datetime("2018-07-03 19:00:00"), xmax=as_datetime("2018-07-04 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=23.5, ymax=34, xmin=as_datetime("2018-07-04 19:00:00"), xmax=as_datetime("2018-07-05 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=23.5, ymax=34, xmin=as_datetime("2018-07-05 19:00:00"), xmax=as_datetime("2018-07-06 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=23.5, ymax=34, xmin=as_datetime("2018-07-06 19:00:00"), xmax=as_datetime("2018-07-07 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=23.5, ymax=34, xmin=as_datetime("2018-07-07 19:00:00"), xmax=as_datetime("2018-07-08 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=23.5, ymax=34, xmin=as_datetime("2018-07-08 19:00:00"), xmax=as_datetime("2018-07-08 19:28:00"), 
+             alpha=0.2, fill = tscol)+
+    # Plot time series
+    geom_line(data = idro_sg, aes(x = DateTime, y = Sal),linewidth = 1.5, color = "black")+
+    # Adjust plot
+    theme_classic() +
+    scale_x_datetime(date_breaks = "1 day", labels = date_format("%b %d"),expand = c(0, 0)) + 
+    ylab("Salinity (PSU)") +  theme(axis.title.x=element_blank(),axis.text.x=element_blank(), 
+                               legend.position = c(0.70,0.95),axis.text = element_text(size = 12, color = "black"),
+                               axis.title.y = element_text(size = 12, face = "bold"),
+                               legend.text = element_text(size = 12))
+  
+  o = ggplot()+
+    # Hypoxia dotted line
+    geom_hline(yintercept=61, linetype='dashed', col = '#6E6E6E')+
+    # Nighttime boxes (19:00 to 05:30)
+    annotate("rect", ymin=0, ymax=230, xmin=as_datetime("2018-07-01 19:00:00"), xmax=as_datetime("2018-07-02 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=230, xmin=as_datetime("2018-07-02 19:00:00"), xmax=as_datetime("2018-07-03 05:30:00"),
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=230, xmin=as_datetime("2018-07-03 19:00:00"), xmax=as_datetime("2018-07-04 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=230, xmin=as_datetime("2018-07-04 19:00:00"), xmax=as_datetime("2018-07-05 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=230, xmin=as_datetime("2018-07-05 19:00:00"), xmax=as_datetime("2018-07-06 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=230, xmin=as_datetime("2018-07-06 19:00:00"), xmax=as_datetime("2018-07-07 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=230, xmin=as_datetime("2018-07-07 19:00:00"), xmax=as_datetime("2018-07-08 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=230, xmin=as_datetime("2018-07-08 19:00:00"), xmax=as_datetime("2018-07-08 19:28:00"), 
+             alpha=0.2, fill = tscol)+
+    # Plot time series
+    geom_line(data = idro_sg, aes(x = DateTime, y = DO_umolkg), linewidth = 1.5, color = "black")+
+    # Adjust plot
+    theme_classic() + 
+    scale_x_datetime(date_breaks = "1 day", labels = date_format("%b %d"),expand = c(0, 0)) + 
+    ylab(expression(paste("DO (µmol kg"^"-1"*")"))) + 
+    theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(), 
+          legend.position = "none", 
+          axis.text = element_text(size = 12, color = "black"),
+          axis.title.y = element_text(size = 12, face = "bold"))+
+    scale_y_continuous(expand = c(0, 0), limits = c(0, NA))
+  
+o_p = ggplot()+
+    # Hypoxia dotted line
+    geom_hline(yintercept=61, linetype='dashed', col = '#6E6E6E')+
+    # Nighttime boxes (19:00 to 05:30)
+    annotate("rect", ymin=0, ymax=125, xmin=as_datetime("2018-07-01 19:00:00"), xmax=as_datetime("2018-07-02 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=125, xmin=as_datetime("2018-07-02 19:00:00"), xmax=as_datetime("2018-07-03 05:30:00"),
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=125, xmin=as_datetime("2018-07-03 19:00:00"), xmax=as_datetime("2018-07-04 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=125, xmin=as_datetime("2018-07-04 19:00:00"), xmax=as_datetime("2018-07-05 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=125, xmin=as_datetime("2018-07-05 19:00:00"), xmax=as_datetime("2018-07-06 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=125, xmin=as_datetime("2018-07-06 19:00:00"), xmax=as_datetime("2018-07-07 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=125, xmin=as_datetime("2018-07-07 19:00:00"), xmax=as_datetime("2018-07-08 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=0, ymax=125, xmin=as_datetime("2018-07-08 19:00:00"), xmax=as_datetime("2018-07-08 19:28:00"), 
+             alpha=0.2, fill = tscol)+
+    # Plot time series
+    geom_line(data = idro_sg, aes(x = DateTime, y = O2_percent),linewidth = 1.5, color = "black")+
+    # Adjust plot
+    theme_classic() + 
+    scale_x_datetime(date_breaks = "1 day", labels = date_format("%b %d"),expand = c(0, 0)) + 
+    ylab("DO (% saturation)") + 
+    theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(), 
+          legend.position = "none", 
+          axis.text = element_text(size = 12, color = "black"),
+          axis.title.y = element_text(size = 12, face = "bold"))+
+    scale_y_continuous(expand = c(0, 0), limits = c(0, NA), position = "right")
+  
+  pH = ggplot()+
+    # Nighttime boxes (19:00 to 05:30)
+    annotate("rect", ymin=7.54, ymax=8.4, xmin=as_datetime("2018-07-01 19:00:00"), xmax=as_datetime("2018-07-02 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=7.54, ymax=8.4, xmin=as_datetime("2018-07-02 19:00:00"), xmax=as_datetime("2018-07-03 05:30:00"),
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=7.54, ymax=8.4, xmin=as_datetime("2018-07-03 19:00:00"), xmax=as_datetime("2018-07-04 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=7.54, ymax=8.4, xmin=as_datetime("2018-07-04 19:00:00"), xmax=as_datetime("2018-07-05 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=7.54, ymax=8.4, xmin=as_datetime("2018-07-05 19:00:00"), xmax=as_datetime("2018-07-06 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=7.54, ymax=8.4, xmin=as_datetime("2018-07-06 19:00:00"), xmax=as_datetime("2018-07-07 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=7.54, ymax=8.4, xmin=as_datetime("2018-07-07 19:00:00"), xmax=as_datetime("2018-07-08 05:30:00"), 
+             alpha=0.2, fill = tscol)+
+    annotate("rect", ymin=7.54, ymax=8.4, xmin=as_datetime("2018-07-08 19:00:00"), xmax=as_datetime("2018-07-08 19:28:00"), 
+             alpha=0.2, fill = tscol)+
+    # Plot time series
+    geom_line(data = idro_sg, aes(x = DateTime, y = pH_T),linewidth = 1.5, color = "black")+
+    # Adjust plot
+    theme_classic() +
+    scale_x_datetime(date_breaks = "1 day", labels = date_format("%b %d"),expand = c(0, 0)) + 
+    ylab(expression(paste("pH"["T"]))) + xlab("Date")+ ylim(7.54,8.4)+
+    theme(legend.position = "none",
+          axis.text = element_text(size = 12, color = "black"),
+          axis.title.x = element_text(size = 12, face = "bold"),
+          axis.title.y = element_text(size = 12, face = "bold"))
+  
+  t/s/o/o_p/pH
+```
+
+## FIGURE S2 - PRPOERTY-PROPERTY PLOTS OF SPATIAL SURVEY (S2 A,B) + INSTRUMENT DATA (S2 C-F)
+
+```{r Make Plots}
+## SPATIAL SURVEY 
+
+  # Conduct linear regression of pH vs DO
+    lm_pH_DO_ss = botdat %>% 
+                  summarize(s = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 100)$regression.results[1,3],
+                            int = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 100)$regression.results[1,2],
+                            r2 = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 100)$rsquare,
+                            pval = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 100)$regression.results[1,5])
+
+  # Plot
+    pH_DO_ss = ggplot()+
+                # Plot pH and DO data points
+                geom_point(data = botdat, aes(x = DO_umolkg, y = pH_TA_DIC, color = Temp), size = 5)+ 
+                # Plot linear regression line
+                geom_abline(data = lm_pH_DO_ss, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed") +
+                # Adjust various plot details
+                ylim(7.6, 8.5) + xlim(0, 400) + theme_classic() + ggtitle("Spatial Surveys")+
+                scale_shape_manual(values=c(19, 15, 17, 18)) + 
+                  labs(x = expression(paste("DO (µmol kg"^"-1"*")")), y = expression(paste("pH"["T"])), color = "Temperature (ºC)") +
+                  theme(axis.text = element_text(color="black", size=10),
+                        legend.position = "none",
+                        axis.title = element_text(face = "bold"),
+                        title = element_text(face = "bold"))+
+                # Colors of plotted npH and nDO data - here, colored by temperature
+                scale_color_gradientn(colors = pal, guide = "colorbar", limits = c(28,36))
+    
+## IDRONAUT
+      
+  # Conduct linear regression of pH vs DO
+    lm_pH_DO_idro = idro_sg %>% 
+                      summarize(s = lmodel2(pH_T~DO_umolkg, nperm = 100)$regression.results[1,3],
+                                int = lmodel2(pH_T~DO_umolkg, nperm = 100)$regression.results[1,2],
+                                r2 = lmodel2(pH_T~DO_umolkg, nperm = 100)$rsquare,
+                                pval = lmodel2(pH_T~DO_umolkg, nperm = 100)$regression.results[1,5])    
+    
+    # Plot (non-normalized)
+      pH_DO_idro = ggplot()+
+                    # Plot pH and DO data points
+                    geom_point(data = idro_sg, aes(x = DO_umolkg, y = pH_T, color = Temp), size = 5)+ 
+                    # Plot linear regression line
+                    geom_abline(data = lm_pH_DO_idro, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed") +
+                    # Adjust various plot details
+                    ylim(7.6, 8.5) + xlim(0, 400) + theme_classic() + ggtitle("Autonomous Sensor")+
+                    scale_shape_manual(values=c(19, 15, 17, 18)) + 
+                      labs(x = expression(paste("DO (µmol kg"^"-1"*")")), y = "", color = "Temperature (ºC)") +
+                      theme(axis.text = element_text(color="black", size=10),
+                            legend.position = c(.85,0.44),
+                            axis.title = element_text(face = "bold"),
+                            title = element_text(face = "bold"),
+                            axis.text.y = element_blank())+
+                    # Colors of plotted npH and nDO data - here, colored by temperature
+                    scale_color_gradientn(colors = pal, guide = "colorbar", limits = c(28,36))
+    
+## Combo Figure S2 - want p-p plots to be twice as tall as the time series
+(t/s/o/o_p/pH)/(pH_DO_ss+pH_DO_idro) + plot_layout(nrow = 6, widths = c(1,1,1,1,1,1,1), heights = c(1,1,1,1,1,2,2))
+
+```
+
+
+## FIGURE 5 - CORAL CORE DATA: CALCIFICATION, EXTENSION, DENSITY
+Loading data extracted from cores using Coral XDS (Half range method). Some cores were broken, and it was impossible to get data from band at break so there is an NA for that year of growth.
+
+```{r Load data, boxplots by site}
+## Load data and adjust it
+  # Load file
+    cores = read_excel("~/Documents/SIO/Dongsha 2018/Data/Dryad/coreXDS.xlsx")
+    
+  # Make CoreID a factor
+    cores$coreID = as.factor(cores$coreID)
+  
+  # Adjust order of locations
+    cores$location <- factor(cores$location, levels = c("Nearshore", "Mid", "Outer", "Outside"))
+  
+  # remove NA years for corals that were broken
+    cores = cores[complete.cases(cores), ]
+
+  # Change depth from ft to m
+    cores$depth_m = cores$depth_ft*.3048 
+
+## Create custom color palettes:
+  core_pal = c("#79ad41","#ddc000","#34b6c6","#4063a3")
+
+## Filter cores to remove the cores where banding was hard to read or doubtful ("good" cores) - removes Cores 4, 10, 16, 20
+cores_good = cores %>%
+                filter(core_num == 1 | core_num == 2 | core_num == 3 | core_num == 5 | core_num == 6 | core_num == 7 |core_num == 8| core_num == 9 | 
+                         core_num == 11 | core_num == 12 | core_num == 13 | core_num == 15 | core_num == 17 | core_num == 18 | core_num == 19)
+
+## Subset good cores into "cores_6y" which only contains data from the "good" cores for years 2012-2017 (the 6 years they all have in common)
+cores_6y = cores_good %>% 
+                filter(year > 2011)
+
+```
+
+```{r Calculate mean of each parameter for 6 y dataset to add to boxplot}
+
+## Means/sd across 2012-2017 (6 years in common) by location:
+    cores_means_6y_loc = cores_6y %>% 
+                      dplyr::group_by(location) %>% 
+                      dplyr::summarize(mean_ext = mean(extension, na.rm = T),
+                                          sd_ext = sd(extension, na.rm = T),
+                                          mean_dens = mean(density, na.rm = T),
+                                          sd_dens = sd(density, na.rm = T),
+                                          mean_calc = mean(calcification, na.rm = T),
+                                          sd_calc = sd(calcification, na.rm = T))
+
+## Add mean and SD to cores_6y for plotting later
+cores_6y = merge(cores_6y,cores_means_6y_loc, by = "location")
+
+```
+
+```{r Boxplot of Growth Parameters - First 6 Years}
+## FIGURE 5 A,B,C - BOXPLOT OF EXT, DENS, CALC (FIRST 6 YEARS)-----
+
+a5 = ggplot()+
+  geom_boxplot(data = cores_6y, aes(x = fct_reorder(coreID,loc_num), y = extension, color = location)) +
+  geom_point(data = cores_6y, aes(x = fct_reorder(coreID,loc_num), y = extension, color = location)) +
+  #geom_hline(data = cores_6y, aes(yintercept = mean_ext, color = location))+
+  theme_classic()+ theme(axis.title.x=element_blank(),  
+                          legend.position = c(0.50,0.95), 
+                          legend.title = element_blank(), 
+                          legend.direction = "horizontal", 
+                          axis.text.x=element_blank(),
+                          axis.text = element_text(size = 10, color = "black"),
+                          axis.title.y = element_text(size = 10, face = "bold")) +
+  ylab(expression("Extension cm" ~year^-1)) + scale_color_manual(values = core_pal)
+
+b5 = ggplot() +
+  geom_boxplot(data = cores_6y, aes(x = fct_reorder(coreID,loc_num), y = density, color = location)) +
+  geom_point(data = cores_6y, aes(x = fct_reorder(coreID,loc_num), y = density, color = location)) +
+  #geom_hline(data = cores_6y, aes(yintercept = mean_dens, color = location))+
+  theme_classic() + theme(axis.title.x=element_blank(),
+                          legend.position = "none",
+                          axis.text.x=element_blank(),
+                          axis.text = element_text(size = 10, color = "black"),
+                          axis.title.y = element_text(size = 10, face = "bold"))+ 
+  xlab("Core ID") + ylab(expression("Density"~(g ~cm^{"-3"}))) + scale_color_manual(values = core_pal)
+
+c5 = ggplot() +
+  geom_boxplot(data = cores_6y, aes(x = fct_reorder(coreID,loc_num), y = calcification, color = location)) +
+  geom_point(data = cores_6y, aes(x = fct_reorder(coreID,loc_num), y = calcification, color = location)) +
+  #geom_hline(data = cores_6y, aes(yintercept = mean_calc, color = location))+
+  theme_classic()+ theme(legend.position = "none",
+                        axis.text = element_text(size = 10, color = "black"),
+                        axis.title.x = element_text(size = 10, face = "bold"),
+                        axis.title.y = element_text(size = 10, face = "bold")) + 
+  ylab(expression("Calcification"~(g ~cm^{"-2"} ~year^-1))) + xlab("Core") + scale_color_manual(values = core_pal)
+
+a5/b5/c5
+```
+
+```{r TABLE S5 + FIGURE 5 D-F: Linear Regression Models}
+## FIGURE 5 D,E,F - P-P PLOTS AND REGRESSION OF GROWTH MEASUREMENTS-----
+
+# Create lm2 data
+lmodel2_results = cores_6y %>%
+                  dplyr::group_by(location) %>% 
+                  dplyr::summarise(s_evd = lmodel2(extension~density, nperm = 100)$regression.results[1,3],
+                          int_evd = lmodel2(extension~density, nperm = 100)$regression.results[1,2],
+                          r2_evd = lmodel2(extension~density, nperm = 100)$rsquare,
+                          pval_evd = lmodel2(extension~density, nperm = 100)$regression.results[1,5],
+                          
+                          s_cve = lmodel2(calcification~extension, nperm = 100)$regression.results[1,3],
+                          int_cve = lmodel2(calcification~extension, nperm = 100)$regression.results[1,2],
+                          r2_cve = lmodel2(calcification~extension, nperm = 100)$rsquare,
+                          pval_cve = lmodel2(calcification~extension, nperm = 100)$regression.results[1,5],
+                          
+                          s_dvc = lmodel2(density~calcification, nperm = 100)$regression.results[1,3],
+                          int_dvc = lmodel2(density~calcification, nperm = 100)$regression.results[1,2],
+                          r2_dvc = lmodel2(density~calcification, nperm = 100)$rsquare,
+                          pval_dvc = lmodel2(density~calcification, nperm = 100)$regression.results[1,5])
+
+# Plots
+d5=  ggplot()+
+  geom_abline(data = lmodel2_results, mapping = aes(slope = s_evd, intercept = int_evd, color = location))+ # now add in the regression line
+  geom_point(data = cores_6y, aes(x = density, y = extension, color = location), size = 2) +
+  theme_classic() + theme(legend.position = "none",
+                          axis.text = element_text(size = 10, color = "black"),
+                          axis.title.x = element_text(size = 10, face = "bold"),
+                          axis.title.y = element_text(size = 10, face = "bold")) +  
+  xlab(expression(bold("Density"~(g ~cm^{"-3"})))) +
+  ylab(expression(bold("Extension"~(cm ~yr^-1)))) + 
+  scale_color_manual(values = core_pal) + scale_y_continuous(position = "right") 
+  
+
+e5=  ggplot()+
+  geom_abline(data = lmodel2_results, mapping = aes(slope = s_cve, intercept = int_cve, color = location))+ # now add in the regression line
+  geom_point(data = cores_6y, aes(x = extension, y = calcification, color = location), size = 2) +
+  theme_classic() + theme(legend.position = "none",
+                          axis.text = element_text(size = 10, color = "black"),
+                          axis.title.x = element_text(size = 10, face = "bold"),
+                          axis.title.y = element_text(size = 10, face = "bold"))  + 
+  ylab(expression(bold("Calcification"~(g ~cm^{"-2"} ~yr^-1)))) +
+  xlab(expression(bold("Extension cm" ~yr^-1))) +
+  scale_color_manual(values = core_pal) + scale_y_continuous(position = "right")
+
+f5=  ggplot()+
+  geom_abline(data = lmodel2_results, mapping = aes(slope = s_dvc, intercept = int_dvc, color = location))+ # now add in the regression line
+  geom_point(data = cores_6y, aes(x = calcification, y = density, color = location), size = 2) +
+  theme_classic() + xlab(expression(bold("Calcification"~(g ~cm^{"-2"} ~yr^-1)))) + ylab(expression(bold("Density"~(g ~cm^{"-3"})))) +
+  scale_color_manual(values = core_pal) +  theme(legend.position = "none",
+                                             axis.text = element_text(size = 10, color = "black"),
+                                             axis.title.x = element_text(size = 10, face = "bold"),
+                                             axis.title.y = element_text(size = 10, face = "bold")) +
+  scale_y_continuous(position = "right")
+
+d5/e5/f5
+```
+
+```{r FIGURE 5 Multiplot: Boxplots + Regressions}
+## FIGURE 5 - MULTIPLOT----
+fig5_1 = a5+d5+ plot_layout(nrow = 1,widths = c(2, 1))
+fig5_2 = b5+f5+ plot_layout(nrow = 1,widths = c(2, 1))
+fig5_3 = c5+e5+ plot_layout(nrow = 1,widths = c(2, 1))
+
+fig5_1/fig5_2/fig5_3
+```
+
+```{r FIGURE S3: Mean rates over all years with 95% CI, Plot}
+### FIGURE S3 - CALC, DENS, EXT TIME SERIES WITH CI SHADED --------
+
+## Calculate mean calcification, extension, density rates for each location across all years with 95% CI
+  cores_meansCI = cores_good %>% dplyr::group_by(location, year) %>% 
+                                 dplyr::summarize(calc_mean = CI(calcification, ci = 0.95)[2],
+                                                  calc_95CI_lower = CI(calcification, ci = 0.95)[3],
+                                                  calc_95CI_upper = CI(calcification, ci = 0.95)[1],
+                                                  
+                                                  dens_mean = CI(density, ci = 0.95)[2],
+                                                  dens_95CI_lower = CI(density, ci = 0.95)[3],
+                                                  dens_95CI_upper = CI(density, ci = 0.95)[1],
+                                                  
+                                                  ext_mean = CI(extension, ci = 0.95)[2],
+                                                  ext_95CI_lower = CI(extension, ci = 0.95)[3],
+                                                  ext_95CI_upper = CI(extension, ci = 0.95)[1])
+  
+## Add means and CIs to cores df by year and location for plotting
+  cores_good_all = merge(cores_good,cores_meansCI,by= c("location","year"))
+
+## Plots with means + CI on top
+
+  # Extension
+  s3a =  ggplot() +
+    geom_line(data = cores_good_all, aes(x = year, y = extension, group = coreID, color = location), alpha = 0.3, size = 1) +
+    geom_ribbon(data = cores_good_all, aes(ymin = ext_95CI_lower, ymax = ext_95CI_upper, x = year, fill = location), alpha = 0.3)+
+    geom_line(data = cores_good_all, aes(y = ext_mean, x = year, color = location), size = 1.3)+
+    facet_wrap(~ location, ncol=4) +
+    scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal) +
+    scale_x_continuous(breaks = seq(1995,2015,5)) +
+    theme_classic() + theme(legend.position = "none",
+                            axis.text = element_text(size = 12, color = "black"),
+                            axis.text.x=element_blank(),
+                            axis.title.y = element_text(size = 12, face = "bold"),
+                            strip.text.x = element_text(size = 12, face = "bold")) +  
+    xlab("") + ylab(expression(bold(atop("Extension",paste("(cm ",yr^{-1},")"))))) + coord_cartesian(ylim = c(0, 2.7))
+  
+  # Density
+  s3b =   ggplot() +
+    geom_line(data = cores_good_all, aes(x = year, y = density, group = coreID, color = location), alpha = 0.3, size = 1) +
+    geom_ribbon(data = cores_good_all, aes(ymin = dens_95CI_lower, ymax = dens_95CI_upper, x = year, fill = location), alpha = 0.3) +
+    geom_line(data = cores_good_all, aes(y = dens_mean, x = year, color = location), size = 1.3)+
+    facet_wrap(~ location, ncol=4) +
+    scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal) +
+    scale_x_continuous(breaks = seq(1995,2015,5)) +
+    theme_classic() + theme(legend.position = "none",
+                            axis.text = element_text(size = 12, color = "black"),
+                            axis.text.x=element_blank(),
+                            axis.title.y = element_text(size = 12, face = "bold"),
+                            strip.background = element_blank(), strip.text = element_blank()) +  
+    xlab("") + ylab(expression(bold(atop("Density",paste("(g ",cm^{-3},yr^{-1},")"))))) + coord_cartesian(ylim = c(1, 3.4)) 
+    
+  # Calcification
+  s3c =  ggplot() +
+    geom_line(data = cores_good_all, aes(x = year, y = calcification, group = coreID, color = location), alpha = 0.3, size = 1) +
+    geom_ribbon(data = cores_good_all, aes(ymin = calc_95CI_lower, ymax = calc_95CI_upper, x = year, fill = location), alpha = 0.3) +
+    geom_line(data = cores_good_all, aes(y = calc_mean, x = year, color = location), size = 1.3)+
+    facet_wrap(~ location, ncol=4) +
+    scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal) +
+    scale_x_continuous(breaks = seq(1995,2015,5)) +
+    theme_classic() + theme(legend.position = "none",
+                            axis.text.y = element_text(size = 12, color = "black"),
+                            axis.text.x = element_text(size = 10, color = "black", face = "bold"),
+                            axis.title.y = element_text(size = 12, face = "bold"),
+                            strip.background = element_blank(), strip.text = element_blank()) +  
+    xlab("") + ylab(expression(bold(atop("Calcification",paste("(g ",cm^{-2},yr^{-1},")"))))) + coord_cartesian(ylim = c(0, 4.5)) 
+  
+  s3a/s3b/s3c
+  
+```
+
+## CORAL CORE STATS - FIGURE 5ABC + TABLE S4
+
+```{r STATS FOR FIGURE 5ABC + TABLE S4}
+library(nlme)
+library(optimx)
+
+# remove NAs first
+cores_6y_noNA = na.exclude(cores_6y)
+
+ctrl <- lmeControl(opt='optim', maxIter = 10000, msMaxIter = 1000);
+
+lme.calc = lme(calcification~location,random=~location|coreID,data=cores_6y_noNA,control=ctrl,method="ML")
+summary(lme.calc)
+
+lme.dens = lme(density~location,random=~location|coreID,data=cores_6y_noNA,control=ctrl, method="ML")
+summary(lme.dens)
+
+lme.ext = lme(extension~location,random=~location|coreID,data=cores_6y_noNA,control=ctrl, method="ML")
+summary(lme.ext)
+
+# pairwise comparisons of lmes's
+library(emmeans)
+
+emmeans(lme.calc, pairwise ~ location, adjust="tukey")
+emmeans(lme.dens, pairwise ~ location, adjust="tukey")
+emmeans(lme.ext, pairwise ~ location, adjust="tukey")
+
+```
+
+## Miscellaneous Calculations/Statistics
+
+```{r TABLE S1 -- STATS FROM SPATIAL SURVEYS}
+# Early morning (S3)
+  s3_stats = s3 %>% summarize(meanT = mean(Temp),
+                     sdT = sd(Temp),
+                     meanSal = mean(Sal),
+                     sdSal = sd(Sal),
+                     meanDO = mean(DO_umolkg),
+                     sdDO = sd(DO_umolkg),
+                     meanDOsat = mean(DO_percent),
+                     sdDOsat = sd(DO_percent),
+                     meanpH = mean(pH_TA_DIC),
+                     sdpH = sd(pH_TA_DIC),
+                     meanDIC = mean(DIC),
+                     sdDIC = sd(DIC),
+                     meanTA = mean(TA_meas),
+                     sdTA = sd(TA_meas),
+                     
+                     minT = min(Temp),
+                     maxT = max(Temp),
+                     rangeT = max(Temp)-min(Temp),
+                     minS = min(Sal),
+                     maxS = max(Sal),
+                     rangeS = max(Sal)-min(Sal),
+                     minDO = min(DO_umolkg),
+                     maxDO = max(DO_umolkg),
+                     rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                     minDOsat = min(DO_percent),
+                     maxDOsat = max(DO_percent),
+                     rangeDOsat = max(DO_percent)-min(DO_percent),
+                     minpH = min(pH_TA_DIC),
+                     maxpH = max(pH_TA_DIC),
+                     rangepH = max(pH_TA_DIC)-min(pH_TA_DIC),
+                     minDIC = min(DIC),
+                     maxDIC = max(DIC),
+                     rangeDIC = max(DIC)-min(DIC),
+                     minTA = min(TA_meas),
+                     maxTA = max(TA_meas),
+                     rangeTA = max(TA_meas)-min(TA_meas),
+                     survey = "S3")
+                     
+    
+    # Late afternoon (S1)
+    s1_stats = s1 %>% summarize(meanT = mean(Temp),
+                     sdT = sd(Temp),
+                     meanSal = mean(Sal),
+                     sdSal = sd(Sal),
+                     meanDO = mean(DO_umolkg),
+                     sdDO = sd(DO_umolkg),
+                     meanDOsat = mean(DO_percent),
+                     sdDOsat = sd(DO_percent),
+                     meanpH = mean(pH_TA_DIC),
+                     sdpH = sd(pH_TA_DIC),
+                     meanDIC = mean(DIC),
+                     sdDIC = sd(DIC),
+                     meanTA = mean(TA_meas),
+                     sdTA = sd(TA_meas),
+                     
+                     minT = min(Temp),
+                     maxT = max(Temp),
+                     rangeT = max(Temp)-min(Temp),
+                     minS = min(Sal),
+                     maxS = max(Sal),
+                     rangeS = max(Sal)-min(Sal),
+                     minDO = min(DO_umolkg),
+                     maxDO = max(DO_umolkg),
+                     rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                     minDOsat = min(DO_percent),
+                     maxDOsat = max(DO_percent),
+                     rangeDOsat = max(DO_percent)-min(DO_percent),
+                     minpH = min(pH_TA_DIC),
+                     maxpH = max(pH_TA_DIC),
+                     rangepH = max(pH_TA_DIC)-min(pH_TA_DIC),
+                     minDIC = min(DIC),
+                     maxDIC = max(DIC),
+                     rangeDIC = max(DIC)-min(DIC),
+                     minTA = min(TA_meas),
+                     maxTA = max(TA_meas),
+                     rangeTA = max(TA_meas)-min(TA_meas),
+                     survey = "S1")
+    
+    # Mid-morning (S2)
+    s2_stats = s2 %>% summarize(meanT = mean(Temp),
+                     sdT = sd(Temp),
+                     meanSal = mean(Sal),
+                     sdSal = sd(Sal),
+                     meanDO = mean(DO_umolkg),
+                     sdDO = sd(DO_umolkg),
+                     meanDOsat = mean(DO_percent),
+                     sdDOsat = sd(DO_percent),
+                     meanpH = mean(pH_TA_DIC),
+                     sdpH = sd(pH_TA_DIC),
+                     meanDIC = mean(DIC),
+                     sdDIC = sd(DIC),
+                     meanTA = mean(TA_meas),
+                     sdTA = sd(TA_meas),
+                     
+                     minT = min(Temp),
+                     maxT = max(Temp),
+                     rangeT = max(Temp)-min(Temp),
+                     minS = min(Sal),
+                     maxS = max(Sal),
+                     rangeS = max(Sal)-min(Sal),
+                     minDO = min(DO_umolkg),
+                     maxDO = max(DO_umolkg),
+                     rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                     minDOsat = min(DO_percent),
+                     maxDOsat = max(DO_percent),
+                     rangeDOsat = max(DO_percent)-min(DO_percent),
+                     minpH = min(pH_TA_DIC),
+                     maxpH = max(pH_TA_DIC),
+                     rangepH = max(pH_TA_DIC)-min(pH_TA_DIC),
+                     minDIC = min(DIC),
+                     maxDIC = max(DIC),
+                     rangeDIC = max(DIC)-min(DIC),
+                     minTA = min(TA_meas),
+                     maxTA = max(TA_meas),
+                     rangeTA = max(TA_meas)-min(TA_meas),
+                     survey = "S2")
+    
+    # Mid-day (S4)
+    s4_stats = s4 %>% summarize(meanT = mean(Temp),
+                     sdT = sd(Temp),
+                     meanSal = mean(Sal),
+                     sdSal = sd(Sal),
+                     meanDO = mean(DO_umolkg),
+                     sdDO = sd(DO_umolkg),
+                     meanDOsat = mean(DO_percent),
+                     sdDOsat = sd(DO_percent),
+                     meanpH = mean(pH_TA_DIC),
+                     sdpH = sd(pH_TA_DIC),
+                     meanDIC = mean(DIC),
+                     sdDIC = sd(DIC),
+                     meanTA = mean(TA_meas),
+                     sdTA = sd(TA_meas),
+                     
+                     minT = min(Temp),
+                     maxT = max(Temp),
+                     rangeT = max(Temp)-min(Temp),
+                     minS = min(Sal),
+                     maxS = max(Sal),
+                     rangeS = max(Sal)-min(Sal),
+                     minDO = min(DO_umolkg),
+                     maxDO = max(DO_umolkg),
+                     rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                     minDOsat = min(DO_percent),
+                     maxDOsat = max(DO_percent),
+                     rangeDOsat = max(DO_percent)-min(DO_percent),
+                     minpH = min(pH_TA_DIC),
+                     maxpH = max(pH_TA_DIC),
+                     rangepH = max(pH_TA_DIC)-min(pH_TA_DIC),
+                     minDIC = min(DIC),
+                     maxDIC = max(DIC),
+                     rangeDIC = max(DIC)-min(DIC),
+                     minTA = min(TA_meas),
+                     maxTA = max(TA_meas),
+                     rangeTA = max(TA_meas)-min(TA_meas),
+                     survey = "S4")
+    
+    # Combine into one table
+    s_stats_all = rbind(s3_stats,s2_stats,s4_stats,s1_stats)
+```
+
+```{r Compare Station Values Late PM - Early AM (RESULTS)}
+### Compare stations across days from spatial
+ 
+  # Late afternoon - early morning 
+  delta_s1_s3 = s1 %>% 
+  left_join(s3, by = "Station") %>% 
+  mutate(T_delta = Temp.x - Temp.y,
+         S_delta = Sal.x - Sal.y,
+         DO_delta = DO_umolkg.x - DO_umolkg.y,
+         DOsat_delta = DO_percent.x - DO_percent.y,
+         pH_delta = pH_TA_DIC.x - pH_TA_DIC.y,
+         DIC_delta = DIC.x - DIC.y,
+         TA_delta = TA_meas.x - TA_meas.y) %>% 
+  select(Station, ends_with("_delta"))   
+  
+```
+
+```{r TABLE S3 -- INSTRUMENT STATS}
+## Means of instrument data (all data)
+  idro_means = idro_sg %>% summarize(meanT = mean(Temp),
+                                                  sdT = sd(Temp),
+                                                  minT = min(Temp),
+                                                  maxT = max(Temp),
+                                                  rangeT = max(Temp)-min(Temp),
+                                                  
+                                                  meanS = mean(Sal),
+                                                  sdS = sd(Sal),
+                                                  minS = min(Sal),
+                                                  maxS = max(Sal),
+                                                  rangeS = max(Sal)-min(Sal),
+                                                  
+                                                  meanDO = mean(DO_umolkg),
+                                                  sdDO = sd(DO_umolkg),
+                                                  minDO = min(DO_umolkg),
+                                                  maxDO = max(DO_umolkg),
+                                                  rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                                                  
+                                                  meanDOsat = mean(O2_percent),
+                                                  sdDOsat = sd(O2_percent),
+                                                  minDOsat = min(O2_percent),
+                                                  maxDOsat = max(O2_percent),
+                                                  rangeDOsat = max(O2_percent)-min(O2_percent),
+                                                  
+                                                  meanpH = mean(pH_T),
+                                                  sdpH = sd(pH_T),
+                                                  minpH = min(pH_T),
+                                                  maxpH = max(pH_T),
+                                                  rangepH = max(pH_T)-min(pH_T))
+
+  
+## Calculate daily statistics for instrument
+  
+  # Add day column and take means by day of deployment
+  idro_sg_daily = idro_sg %>%
+                      mutate(day = day(DateTime)) %>%
+                      dplyr::group_by(day) %>%
+                      dplyr::summarize(dailymin_T = min(Temp, na.rm = TRUE),
+                                dailymax_T = max(Temp, na.rm = TRUE),
+                                dailyrange_T = max(Temp, na.rm = TRUE) - min(Temp, na.rm = TRUE),
+                                dailymean_T = mean(Temp, na.rm = TRUE),
+                                
+                                dailymin_S = min(Sal, na.rm = TRUE),
+                                dailymax_S = max(Sal, na.rm = TRUE),
+                                dailyrange_S = max(Sal, na.rm = TRUE) - min(Sal, na.rm = TRUE),
+                                dailymean_S = mean(Sal, na.rm = TRUE),
+                                
+                                dailymin_DO = min(DO_umolkg, na.rm = TRUE),
+                                dailymax_DO = max(DO_umolkg, na.rm = TRUE),
+                                dailyrange_DO = max(DO_umolkg, na.rm = TRUE) - min(DO_umolkg, na.rm = TRUE),
+                                dailymean_DO = mean(DO_umolkg, na.rm = TRUE),
+                                
+                                dailymin_DOsat = min(O2_percent, na.rm = TRUE),
+                                dailymax_DOsat = max(O2_percent, na.rm = TRUE),
+                                dailyrange_DOsat = max(O2_percent, na.rm = TRUE) - min(O2_percent, na.rm = TRUE),
+                                dailymean_DOsat = mean(O2_percent, na.rm = TRUE),
+                                
+                                dailymin_pH = min(pH_T, na.rm = TRUE),
+                                dailymax_pH = max(pH_T, na.rm = TRUE),
+                                dailyrange_pH = max(pH_T, na.rm = TRUE) - min(pH_T, na.rm = TRUE),
+                                dailymean_pH = mean(pH_T, na.rm = TRUE))
+
+## Remove first and last days because we only want to use full days (not partials)
+idro_sg_daily_sub = idro_sg_daily %>% 
+  slice(2:n()) # removes first day (first row)
+
+idro_sg_daily_sub = idro_sg_daily_sub %>% 
+  slice(1:(n()-1)) # removes last day (last row for that site)
+
+#### TABLE S3 - MEAN DAILY STATS
+## Now average these values across all days for entire deployment (without first and last day)
+idro_sg_daily_means = idro_sg_daily_sub %>%
+                          summarize(mean_dailymin_T = mean(dailymin_T, na.rm = TRUE),
+                                  mean_dailymax_T = mean(dailymax_T, na.rm = TRUE),
+                                  mean_dailyrange_T = mean(dailyrange_T, na.rm = TRUE),
+                                  mean_dailymean_T = mean(dailymean_T, na.rm = TRUE),
+                                  
+                                  
+                                  sd_dailymin_T = sd(dailymin_T, na.rm = TRUE),
+                                  sd_dailymax_T = sd(dailymax_T, na.rm = TRUE),
+                                  sd_dailyrange_T = sd(dailyrange_T, na.rm = TRUE),
+                                  sd_dailymean_T = sd(dailymean_T, na.rm = TRUE),
+                                  
+                                  mean_dailymin_S = mean(dailymin_S, na.rm = TRUE),
+                                  mean_dailymax_S = mean(dailymax_S, na.rm = TRUE),
+                                  mean_dailyrange_S = mean(dailyrange_S, na.rm = TRUE),
+                                  mean_dailymean_S = mean(dailymean_S, na.rm = TRUE),
+                                  
+                                  sd_dailymin_S = sd(dailymin_S, na.rm = TRUE),
+                                  sd_dailymax_S = sd(dailymax_S, na.rm = TRUE),
+                                  sd_dailyrange_S = sd(dailyrange_S, na.rm = TRUE),
+                                  sd_dailymean_S = sd(dailymean_S, na.rm = TRUE),
+                                 
+                                  mean_dailymin_DO = mean(dailymin_DO, na.rm = TRUE),
+                                  mean_dailymax_DO = mean(dailymax_DO, na.rm = TRUE),
+                                  mean_dailyrange_DO = mean(dailyrange_DO, na.rm = TRUE),
+                                  mean_dailymean_DO = mean(dailymean_DO, na.rm = TRUE),
+                                  
+                                  sd_dailymin_DO = sd(dailymin_DO, na.rm = TRUE),
+                                  sd_dailymax_DO = sd(dailymax_DO, na.rm = TRUE),
+                                  sd_dailyrange_DO = sd(dailyrange_DO, na.rm = TRUE),
+                                  sd_dailymean_DO = sd(dailymean_DO, na.rm = TRUE),
+                                  
+                                  mean_dailymin_DOsat = mean(dailymin_DOsat, na.rm = TRUE),
+                                  mean_dailymax_DOsat = mean(dailymax_DOsat, na.rm = TRUE),
+                                  mean_dailyrange_DOsat = mean(dailyrange_DOsat, na.rm = TRUE),
+                                  mean_dailymean_DOsat = mean(dailymean_DOsat, na.rm = TRUE),
+                                  
+                                  sd_dailymin_DOsat = sd(dailymin_DOsat, na.rm = TRUE),
+                                  sd_dailymax_DOsat = sd(dailymax_DOsat, na.rm = TRUE),
+                                  sd_dailyrange_DOsat = sd(dailyrange_DOsat, na.rm = TRUE),
+                                  sd_dailymean_DOsat = sd(dailymean_DOsat, na.rm = TRUE),
+                                
+                                  mean_dailymin_pH = mean(dailymin_pH, na.rm = TRUE),
+                                  mean_dailymax_pH = mean(dailymax_pH, na.rm = TRUE),
+                                  mean_dailyrange_pH = mean(dailyrange_pH, na.rm = TRUE),
+                                  mean_dailymean_pH = mean(dailymean_pH, na.rm = TRUE),
+                                  
+                                  sd_dailymin_pH = sd(dailymin_pH, na.rm = TRUE),
+                                  sd_dailymax_pH = sd(dailymax_pH, na.rm = TRUE),
+                                  sd_dailyrange_pH = sd(dailyrange_pH, na.rm = TRUE),
+                                  sd_dailymean_pH = sd(dailymean_pH, na.rm = TRUE))
+```
+
+```{r TABLE S4 -- CORAL GROWTH STATS}
+
+#### TABLE S4 -- MEANS BY LOC AND ACROSS LOC FOR 6 YEARS IN COMMON    
+  ## Means/sd across 2012-2017 (6 years in common):
+    cores_means_6y = cores_6y %>% summarize(mean_ext = mean(extension, na.rm = T),
+                                          sd_ext = sd(extension, na.rm = T),
+                                          mean_dens = mean(density, na.rm = T),
+                                          sd_dens = sd(density, na.rm = T),
+                                          mean_calc = mean(calcification, na.rm = T),
+                                          sd_calc = sd(calcification, na.rm = T))
+      
+  ## Means/sd across 2012-2017 (6 years in common) by location:
+    cores_means_6y_loc = cores_6y %>% 
+                      dplyr::group_by(location) %>% 
+                      dplyr::summarize(mean_ext = mean(extension, na.rm = T),
+                                          sd_ext = sd(extension, na.rm = T),
+                                          mean_dens = mean(density, na.rm = T),
+                                          sd_dens = sd(density, na.rm = T),
+                                          mean_calc = mean(calcification, na.rm = T),
+                                          sd_calc = sd(calcification, na.rm = T))
+```
