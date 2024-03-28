@@ -5,7 +5,7 @@ date: "03/13/2024"
 output: html_document
 ---
 
-The following is the code used to analyze data and produce figures featured in the manuscript "Coral growth along a natural gradient of seawater temperature, pH, and oxygen in a nearshore seagrass bed on Dongsha Atoll, Taiwan" by Pezner et al. Code may be used with proper attribution. Any questions, please contact Dr. Ariel Pezner at arielpezner@gmail.com.
+The following code is used to analyze data and produce figures featured in the manuscript "Coral growth along a natural gradient of seawater temperature, pH, and oxygen in a nearshore seagrass bed on Dongsha Atoll, Taiwan" by Pezner et al. Code may be used with proper attribution. Any questions, please contact Dr. Ariel Pezner at arielpezner@gmail.com.
 
 ## Set up
 ```{r Load various packages and functions}
@@ -13,9 +13,8 @@ The following is the code used to analyze data and produce figures featured in t
 library(ggplot2);library(scales);library(dplyr);library(ggthemes);library(patchwork);library(RColorBrewer); library(tidyverse);library(readr);library(DescTools);library(pastecs);library(forcats);library(reshape2);library(lubridate);
 library(readxl); library(gsw); library(ggpubr);library(Rmisc);library(dplyr); library(akima)
 
-# Load functions (source will vary by computer)
-source('~/Documents/SIO/Dongsha 2018/Code/Github/calcDOatsat.R') # load functions to calculate DO saturation concentration (2 ways)
-source('~/Documents/SIO/Dongsha 2018/Code/Github/calibcalcpH.R') # load functions to calibrate pH
+# Load function (source will vary by computer)
+source('~/Documents/SIO/Dongsha 2018/Code/Github/calcDOatsat.R') # load function to calculate DO saturation concentration
 
 # Load color palettes
 library(RColorBrewer); library(MetBrewer); library(wesanderson); library(paletteer)
@@ -255,6 +254,7 @@ Load data required to make seawater chemistry spatial contour plots and calculat
 ## FIGURE S1 - SPATIAL SURVEY GRADIENTS
 
 ```{r Spatial Survey Contour Plots - Gradients, echo=FALSE}
+
 ## Make color palette
   pal_spg = paletteer_c("ggthemes::Orange-Blue-White Diverging",30)[2:28]
 
@@ -749,7 +749,7 @@ Load data required to make seawater chemistry spatial contour plots and calculat
 ```
 
 ```{r Prepare data for plotting P-P plots with contour lines}
-# Create some fake data with range of TA and DIC values (every 10 umol/kg) that we're interested in
+# Create data with range of TA and DIC values (every 10 umol/kg) that we're interested in (for contour lines)
     nDIC2 = seq(1350,2050,10)
     nTA2 = seq(2000,2700,10)
     DO2 = seq(0,700,10)
@@ -804,52 +804,43 @@ Load data required to make seawater chemistry spatial contour plots and calculat
 ```
 
 ```{r TABLE S2 - Compute Linear Regressions for each P-P Plot + Means with SD}
-## Compute linear regressions    
+## Compute linear regressions (p-values will vary slightly depending on number of permutations run, so setting seed for reproducibility)    
 library(lmodel2)
 
-  # Linear regression of nDIC and nTA
-      lm_nDICnTA = botdat %>% 
-                    summarize(s = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,3],
-                              int = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,2],
-                              r2 = lmodel2(nTA~nDIC, nperm = 100)$rsquare,
-                              pval = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,5])
+  # Linear regression of nTA and nDIC
+      set.seed(1000)
+      lm_nTAnDIC = botdat %>% 
+                    summarize(s = lmodel2(nTA~nDIC, nperm = 1000)$regression.results[1,3],
+                              int = lmodel2(nTA~nDIC, nperm = 1000)$regression.results[1,2],
+                              r2 = lmodel2(nTA~nDIC, nperm = 1000)$rsquare,
+                              pval = lmodel2(nTA~nDIC, nperm = 1000)$regression.results[1,5])
 
-     # Linear regression of nDIC and nTA by survey
-      lm_nDICnTA_survey = botdat %>% 
+     # Linear regression of nTA and nDIC by survey
+      set.seed(1000)
+      lm_nTAnDIC_survey = botdat %>% 
                     dplyr::group_by(Survey) %>% 
-                    dplyr::summarize(s = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,3],
-                              int = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,2],
-                              r2 = lmodel2(nTA~nDIC, nperm = 100)$rsquare,
-                              pval = lmodel2(nTA~nDIC, nperm = 100)$regression.results[1,5])
+                    dplyr::summarize(s = lmodel2(nTA~nDIC, nperm = 1000)$regression.results[1,3],
+                              int = lmodel2(nTA~nDIC, nperm = 1000)$regression.results[1,2],
+                              r2 = lmodel2(nTA~nDIC, nperm = 1000)$rsquare,
+                              pval = lmodel2(nTA~nDIC, nperm = 1000)$regression.results[1,5])
+
       
-  # Linear regression of nDIC and DO
-      lm_nDICDO = botdat %>% 
-                    summarize(s = lmodel2(DO_umolkg~nDIC, nperm = 100)$regression.results[1,3],
-                              int = lmodel2(DO_umolkg~nDIC, nperm = 100)$regression.results[1,2],
-                              r2 = lmodel2(DO_umolkg~nDIC, nperm = 100)$rsquare,
-                              pval = lmodel2(DO_umolkg~nDIC, nperm = 100)$regression.results[1,5])
+  # Linear regression of nDO and nDIC_NCP
+      set.seed(1000)
+      lm_DO_nDIC_NCP = botdat %>% 
+                    summarize(s = lmodel2(DO_umolkg~nDIC_NCP, nperm = 1000)$regression.results[1,3],
+                              int = lmodel2(DO_umolkg~nDIC_NCP, nperm = 1000)$regression.results[1,2],
+                              r2 = lmodel2(DO_umolkg~nDIC_NCP, nperm = 1000)$rsquare,
+                              pval = lmodel2(DO_umolkg~nDIC_NCP, nperm = 1000)$regression.results[1,5])
       
-  # Linear regression of nDIC_NCP and nTA
-      lm_nDIC_NCP_nTA = botdat %>% 
-                    summarize(s = lmodel2(nTA~nDIC_NCP, nperm = 100)$regression.results[1,3],
-                              int = lmodel2(nTA~nDIC_NCP, nperm = 100)$regression.results[1,2],
-                              r2 = lmodel2(nTA~nDIC_NCP, nperm = 100)$rsquare,
-                              pval = lmodel2(nTA~nDIC_NCP, nperm = 100)$regression.results[1,5])
-      
-  # Linear regression of nDIC_NCP and nDO
-      lm_nDIC_NCP_DO = botdat %>% 
-                    summarize(s = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,3],
-                              int = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,2],
-                              r2 = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$rsquare,
-                              pval = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,5])
-      
-      # Linear regression of nDIC_NCP and nDO by survey
-      lm_nDIC_NCP_DO_survey = botdat %>% 
+      # Linear regression of nDO and nDIC_NCP by survey
+      set.seed(1000)
+      lm_DO_nDIC_NCP_survey = botdat %>% 
                                 dplyr::group_by(Survey) %>% 
-                                dplyr::summarize(s = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,3],
-                                          int = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,2],
-                                          r2 = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$rsquare,
-                                          pval = lmodel2(DO_umolkg~nDIC_NCP, nperm = 100)$regression.results[1,5])
+                                dplyr::summarize(s = lmodel2(DO_umolkg~nDIC_NCP, nperm = 1000)$regression.results[1,3],
+                                          int = lmodel2(DO_umolkg~nDIC_NCP, nperm = 1000)$regression.results[1,2],
+                                          r2 = lmodel2(DO_umolkg~nDIC_NCP, nperm = 1000)$rsquare,
+                                          pval = lmodel2(DO_umolkg~nDIC_NCP, nperm = 1000)$regression.results[1,5])
       
 ## Find mean and SD across all surveys to plot as point with error bars
   nDICTA = botdat %>% summarize(mean_nDIC = mean(nDIC),
@@ -877,7 +868,7 @@ library(lmodel2)
             metR::geom_contour2(data = D, aes(x=nDIC, y=nTA ,z=npH,label =  round(..level..,3)), 
                                 color = "grey", alpha = 0.9, label_size = 9)+
             # Plot linear regression line
-            geom_abline(data = lm_nDICnTA, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed")+
+            geom_abline(data = lm_nTAnDIC, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed")+
             # Plot nTA and nDIC data points
             geom_point(data = botdat, aes(x = nDIC, y = nTA, color = Survey_ID, shape = Location), size = 8)+
             # Plot mean nDIC, nTA point and add error bars of 1 SD in both directions
@@ -905,7 +896,7 @@ library(lmodel2)
               metR::geom_contour2(data = D, aes(x=nDIC, y=nTA ,z=npH,label =  round(..level..,3)), 
                                   color = "grey", alpha = 0.9, label_size = 9)+
               # Plot linear regression line
-              geom_abline(data = lm_nDICnTA, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
+              geom_abline(data = lm_nTAnDIC, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
               # Plot nTA and nDIC data points
               geom_point(data = botdat, aes(x = nDIC, y = nTA, color = pH_TA_DIC, shape = Location), size = 8)+
               # Plot mean nDIC, nTA point and add error bars of 1 SD in both directions
@@ -931,7 +922,7 @@ library(lmodel2)
               metR::geom_contour2(data = D, aes(x=nDIC, y=nTA ,z=npH,label =  round(..level..,3)), 
                                   color = "grey", alpha = 0.9, label_size = 9)+
               # Plot linear regression line
-              geom_abline(data = lm_nDICnTA, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
+              geom_abline(data = lm_nTAnDIC, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
               # Plot nTA and nDIC data points
               geom_point(data = botdat, aes(x = nDIC, y = nTA, color = DO_umolkg, shape = Location), size = 8)+
               # Plot mean nDIC, nTA point and add error bars of 1 SD in both directions
@@ -958,7 +949,7 @@ library(lmodel2)
             metR::geom_contour2(data = D3, aes(x=nDIC_NCP, y=DO ,z=npH, label =  round(..level..,3)), 
                                 color = "grey", alpha = 0.9, label_size = 9)+
             # Plot linear regression line
-            geom_abline(data = lm_nDIC_NCP_DO, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
+            geom_abline(data = lm_DO_nDIC_NCP, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
             # Plot DO and nDIC_NCP data points
             geom_point(data = botdat, aes(x = nDIC_NCP, y = DO_umolkg, color = Survey_ID, shape = Location), size = 8)+
             # Plot mean DO and nDIC_NCP point and add error bars of 1 SD in both directions
@@ -985,7 +976,7 @@ library(lmodel2)
             metR::geom_contour2(data = D3, aes(x=nDIC_NCP, y=DO ,z=npH,label =  round(..level..,3)), 
                                 color = "grey", alpha = 0.9, label_size = 9)+
             # Plot linear regression line
-            geom_abline(data = lm_nDIC_NCP_DO, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
+            geom_abline(data = lm_DO_nDIC_NCP, mapping = aes(slope = s, intercept = int), color="black",linetype = "dashed" )+
             # Plot DO and nDIC_NCP data points
             geom_point(data = botdat, aes(x = nDIC_NCP, y = DO_umolkg, color = pH_TA_DIC, shape = Location), size = 8)+
             # Plot mean DO and nDIC_NCP point and add error bars of 1 SD in both directions
@@ -1007,9 +998,7 @@ library(lmodel2)
             scale_color_gradientn(colors = rev(pal), guide = "colorbar", limits = c(7.7,8.5))
   
  
-  
 (pp|pp_pH)/(pp2|pp3)
-
 ```
 
 ## FIGURE S2 C-F - IDRONAUT TIME SERIES
@@ -1208,11 +1197,12 @@ o_p = ggplot()+
 ## SPATIAL SURVEY 
 
   # Conduct linear regression of pH vs DO
+    set.seed(1000)
     lm_pH_DO_ss = botdat %>% 
-                  summarize(s = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 100)$regression.results[1,3],
-                            int = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 100)$regression.results[1,2],
-                            r2 = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 100)$rsquare,
-                            pval = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 100)$regression.results[1,5])
+                  summarize(s = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 1000)$regression.results[1,3],
+                            int = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 1000)$regression.results[1,2],
+                            r2 = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 1000)$rsquare,
+                            pval = lmodel2(pH_TA_DIC~DO_umolkg, nperm = 1000)$regression.results[1,5])
 
   # Plot
     pH_DO_ss = ggplot()+
@@ -1234,11 +1224,12 @@ o_p = ggplot()+
 ## IDRONAUT
       
   # Conduct linear regression of pH vs DO
+    set.seed(1000)
     lm_pH_DO_idro = idro_sg %>% 
-                      summarize(s = lmodel2(pH_T~DO_umolkg, nperm = 100)$regression.results[1,3],
-                                int = lmodel2(pH_T~DO_umolkg, nperm = 100)$regression.results[1,2],
-                                r2 = lmodel2(pH_T~DO_umolkg, nperm = 100)$rsquare,
-                                pval = lmodel2(pH_T~DO_umolkg, nperm = 100)$regression.results[1,5])    
+                      summarize(s = lmodel2(pH_T~DO_umolkg, nperm = 1000)$regression.results[1,3],
+                                int = lmodel2(pH_T~DO_umolkg, nperm = 1000)$regression.results[1,2],
+                                r2 = lmodel2(pH_T~DO_umolkg, nperm = 1000)$rsquare,
+                                pval = lmodel2(pH_T~DO_umolkg, nperm = 1000)$regression.results[1,5])    
     
     # Plot (non-normalized)
       pH_DO_idro = ggplot()+
@@ -1265,7 +1256,7 @@ o_p = ggplot()+
 
 
 ## FIGURE 5 - CORAL CORE DATA: CALCIFICATION, EXTENSION, DENSITY
-Loading data extracted from cores using Coral XDS (Half range method). Some cores were broken, and it was impossible to get data from band at break so there is an NA for that year of growth.
+Loading data extracted from cores using Coral XDS (Half range method). Some cores were broken, and it was impossible to get data from band at break, so there is an NA for that year of growth.
 
 ```{r Load data, boxplots by site}
 ## Load data and adjust it
@@ -1359,22 +1350,23 @@ a5/b5/c5
 ## FIGURE 5 D,E,F - P-P PLOTS AND REGRESSION OF GROWTH MEASUREMENTS-----
 
 # Create lm2 data
+set.seed(1000)
 lmodel2_results = cores_6y %>%
                   dplyr::group_by(location) %>% 
-                  dplyr::summarise(s_evd = lmodel2(extension~density, nperm = 100)$regression.results[1,3],
-                          int_evd = lmodel2(extension~density, nperm = 100)$regression.results[1,2],
-                          r2_evd = lmodel2(extension~density, nperm = 100)$rsquare,
-                          pval_evd = lmodel2(extension~density, nperm = 100)$regression.results[1,5],
+                  dplyr::summarise(s_evd = lmodel2(extension~density, nperm = 1000)$regression.results[1,3],
+                          int_evd = lmodel2(extension~density, nperm = 1000)$regression.results[1,2],
+                          r2_evd = lmodel2(extension~density, nperm = 1000)$rsquare,
+                          pval_evd = lmodel2(extension~density, nperm = 1000)$regression.results[1,5],
                           
-                          s_cve = lmodel2(calcification~extension, nperm = 100)$regression.results[1,3],
-                          int_cve = lmodel2(calcification~extension, nperm = 100)$regression.results[1,2],
-                          r2_cve = lmodel2(calcification~extension, nperm = 100)$rsquare,
-                          pval_cve = lmodel2(calcification~extension, nperm = 100)$regression.results[1,5],
+                          s_cve = lmodel2(calcification~extension, nperm = 1000)$regression.results[1,3],
+                          int_cve = lmodel2(calcification~extension, nperm = 1000)$regression.results[1,2],
+                          r2_cve = lmodel2(calcification~extension, nperm = 1000)$rsquare,
+                          pval_cve = lmodel2(calcification~extension, nperm = 1000)$regression.results[1,5],
                           
-                          s_dvc = lmodel2(density~calcification, nperm = 100)$regression.results[1,3],
-                          int_dvc = lmodel2(density~calcification, nperm = 100)$regression.results[1,2],
-                          r2_dvc = lmodel2(density~calcification, nperm = 100)$rsquare,
-                          pval_dvc = lmodel2(density~calcification, nperm = 100)$regression.results[1,5])
+                          s_dvc = lmodel2(density~calcification, nperm = 1000)$regression.results[1,3],
+                          int_dvc = lmodel2(density~calcification, nperm = 1000)$regression.results[1,2],
+                          r2_dvc = lmodel2(density~calcification, nperm = 1000)$rsquare,
+                          pval_dvc = lmodel2(density~calcification, nperm = 1000)$regression.results[1,5])
 
 # Plots
 d5=  ggplot()+
@@ -1410,7 +1402,7 @@ f5=  ggplot()+
                                              axis.title.y = element_text(size = 10, face = "bold")) +
   scale_y_continuous(position = "right")
 
-d5/e5/f5
+d5/f5/e5
 ```
 
 ```{r FIGURE 5 Multiplot: Boxplots + Regressions}
@@ -1524,163 +1516,183 @@ emmeans(lme.ext, pairwise ~ location, adjust="tukey")
 
 ## Miscellaneous Calculations/Statistics
 
-```{r TABLE S1 -- STATS FROM SPATIAL SURVEYS}
+```{r TABLE S1 -- DESCRIPTIVE STATS FROM SPATIAL SURVEYS}
 # Early morning (S3)
-  s3_stats = s3 %>% summarize(meanT = mean(Temp),
-                     sdT = sd(Temp),
-                     meanSal = mean(Sal),
-                     sdSal = sd(Sal),
-                     meanDO = mean(DO_umolkg),
-                     sdDO = sd(DO_umolkg),
-                     meanDOsat = mean(DO_percent),
-                     sdDOsat = sd(DO_percent),
-                     meanpH = mean(pH_TA_DIC),
-                     sdpH = sd(pH_TA_DIC),
-                     meanDIC = mean(DIC),
-                     sdDIC = sd(DIC),
-                     meanTA = mean(TA_meas),
-                     sdTA = sd(TA_meas),
-                     
+  s3_stats = s3 %>% summarize(survey = "S3",
                      minT = min(Temp),
                      maxT = max(Temp),
                      rangeT = max(Temp)-min(Temp),
+                     meanT = mean(Temp),
+                     sdT = sd(Temp),
+                     
                      minS = min(Sal),
                      maxS = max(Sal),
                      rangeS = max(Sal)-min(Sal),
+                     meanSal = mean(Sal),
+                     sdSal = sd(Sal),
+                     
                      minDO = min(DO_umolkg),
                      maxDO = max(DO_umolkg),
                      rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                     meanDO = mean(DO_umolkg),
+                     sdDO = sd(DO_umolkg),
+                     
                      minDOsat = min(DO_percent),
                      maxDOsat = max(DO_percent),
                      rangeDOsat = max(DO_percent)-min(DO_percent),
+                     meanDOsat = mean(DO_percent),
+                     sdDOsat = sd(DO_percent),
+                     
                      minpH = min(pH_TA_DIC),
                      maxpH = max(pH_TA_DIC),
                      rangepH = max(pH_TA_DIC)-min(pH_TA_DIC),
+                     meanpH = mean(pH_TA_DIC),
+                     sdpH = sd(pH_TA_DIC),
+                     
                      minDIC = min(DIC),
                      maxDIC = max(DIC),
                      rangeDIC = max(DIC)-min(DIC),
+                     meanDIC = mean(DIC),
+                     sdDIC = sd(DIC),
+                     
                      minTA = min(TA_meas),
                      maxTA = max(TA_meas),
                      rangeTA = max(TA_meas)-min(TA_meas),
-                     survey = "S3")
+                     meanTA = mean(TA_meas),
+                     sdTA = sd(TA_meas))
                      
     
     # Late afternoon (S1)
-    s1_stats = s1 %>% summarize(meanT = mean(Temp),
-                     sdT = sd(Temp),
-                     meanSal = mean(Sal),
-                     sdSal = sd(Sal),
-                     meanDO = mean(DO_umolkg),
-                     sdDO = sd(DO_umolkg),
-                     meanDOsat = mean(DO_percent),
-                     sdDOsat = sd(DO_percent),
-                     meanpH = mean(pH_TA_DIC),
-                     sdpH = sd(pH_TA_DIC),
-                     meanDIC = mean(DIC),
-                     sdDIC = sd(DIC),
-                     meanTA = mean(TA_meas),
-                     sdTA = sd(TA_meas),
-                     
+    s1_stats = s1 %>% summarize(survey = "S1",
                      minT = min(Temp),
                      maxT = max(Temp),
                      rangeT = max(Temp)-min(Temp),
+                     meanT = mean(Temp),
+                     sdT = sd(Temp),
+                     
                      minS = min(Sal),
                      maxS = max(Sal),
                      rangeS = max(Sal)-min(Sal),
+                     meanSal = mean(Sal),
+                     sdSal = sd(Sal),
+                     
                      minDO = min(DO_umolkg),
                      maxDO = max(DO_umolkg),
                      rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                     meanDO = mean(DO_umolkg),
+                     sdDO = sd(DO_umolkg),
+                     
                      minDOsat = min(DO_percent),
                      maxDOsat = max(DO_percent),
                      rangeDOsat = max(DO_percent)-min(DO_percent),
+                     meanDOsat = mean(DO_percent),
+                     sdDOsat = sd(DO_percent),
+                     
                      minpH = min(pH_TA_DIC),
                      maxpH = max(pH_TA_DIC),
                      rangepH = max(pH_TA_DIC)-min(pH_TA_DIC),
+                     meanpH = mean(pH_TA_DIC),
+                     sdpH = sd(pH_TA_DIC),
+                     
                      minDIC = min(DIC),
                      maxDIC = max(DIC),
                      rangeDIC = max(DIC)-min(DIC),
+                     meanDIC = mean(DIC),
+                     sdDIC = sd(DIC),
+                     
                      minTA = min(TA_meas),
                      maxTA = max(TA_meas),
                      rangeTA = max(TA_meas)-min(TA_meas),
-                     survey = "S1")
+                     meanTA = mean(TA_meas),
+                     sdTA = sd(TA_meas))
     
     # Mid-morning (S2)
-    s2_stats = s2 %>% summarize(meanT = mean(Temp),
-                     sdT = sd(Temp),
-                     meanSal = mean(Sal),
-                     sdSal = sd(Sal),
-                     meanDO = mean(DO_umolkg),
-                     sdDO = sd(DO_umolkg),
-                     meanDOsat = mean(DO_percent),
-                     sdDOsat = sd(DO_percent),
-                     meanpH = mean(pH_TA_DIC),
-                     sdpH = sd(pH_TA_DIC),
-                     meanDIC = mean(DIC),
-                     sdDIC = sd(DIC),
-                     meanTA = mean(TA_meas),
-                     sdTA = sd(TA_meas),
-                     
+    s2_stats = s2 %>% summarize(survey = "S2",
                      minT = min(Temp),
                      maxT = max(Temp),
                      rangeT = max(Temp)-min(Temp),
+                     meanT = mean(Temp),
+                     sdT = sd(Temp),
+                     
                      minS = min(Sal),
                      maxS = max(Sal),
                      rangeS = max(Sal)-min(Sal),
+                     meanSal = mean(Sal),
+                     sdSal = sd(Sal),
+                     
                      minDO = min(DO_umolkg),
                      maxDO = max(DO_umolkg),
                      rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                     meanDO = mean(DO_umolkg),
+                     sdDO = sd(DO_umolkg),
+                     
                      minDOsat = min(DO_percent),
                      maxDOsat = max(DO_percent),
                      rangeDOsat = max(DO_percent)-min(DO_percent),
+                     meanDOsat = mean(DO_percent),
+                     sdDOsat = sd(DO_percent),
+                     
                      minpH = min(pH_TA_DIC),
                      maxpH = max(pH_TA_DIC),
                      rangepH = max(pH_TA_DIC)-min(pH_TA_DIC),
+                     meanpH = mean(pH_TA_DIC),
+                     sdpH = sd(pH_TA_DIC),
+                     
                      minDIC = min(DIC),
                      maxDIC = max(DIC),
                      rangeDIC = max(DIC)-min(DIC),
+                     meanDIC = mean(DIC),
+                     sdDIC = sd(DIC),
+                     
                      minTA = min(TA_meas),
                      maxTA = max(TA_meas),
                      rangeTA = max(TA_meas)-min(TA_meas),
-                     survey = "S2")
+                     meanTA = mean(TA_meas),
+                     sdTA = sd(TA_meas))
     
     # Mid-day (S4)
-    s4_stats = s4 %>% summarize(meanT = mean(Temp),
-                     sdT = sd(Temp),
-                     meanSal = mean(Sal),
-                     sdSal = sd(Sal),
-                     meanDO = mean(DO_umolkg),
-                     sdDO = sd(DO_umolkg),
-                     meanDOsat = mean(DO_percent),
-                     sdDOsat = sd(DO_percent),
-                     meanpH = mean(pH_TA_DIC),
-                     sdpH = sd(pH_TA_DIC),
-                     meanDIC = mean(DIC),
-                     sdDIC = sd(DIC),
-                     meanTA = mean(TA_meas),
-                     sdTA = sd(TA_meas),
-                     
+    s4_stats = s4 %>% summarize(survey = "S4",
                      minT = min(Temp),
                      maxT = max(Temp),
                      rangeT = max(Temp)-min(Temp),
+                     meanT = mean(Temp),
+                     sdT = sd(Temp),
+                     
                      minS = min(Sal),
                      maxS = max(Sal),
                      rangeS = max(Sal)-min(Sal),
+                     meanSal = mean(Sal),
+                     sdSal = sd(Sal),
+                     
                      minDO = min(DO_umolkg),
                      maxDO = max(DO_umolkg),
                      rangeDO = max(DO_umolkg)-min(DO_umolkg),
+                     meanDO = mean(DO_umolkg),
+                     sdDO = sd(DO_umolkg),
+                     
                      minDOsat = min(DO_percent),
                      maxDOsat = max(DO_percent),
                      rangeDOsat = max(DO_percent)-min(DO_percent),
+                     meanDOsat = mean(DO_percent),
+                     sdDOsat = sd(DO_percent),
+                     
                      minpH = min(pH_TA_DIC),
                      maxpH = max(pH_TA_DIC),
                      rangepH = max(pH_TA_DIC)-min(pH_TA_DIC),
+                     meanpH = mean(pH_TA_DIC),
+                     sdpH = sd(pH_TA_DIC),
+                     
                      minDIC = min(DIC),
                      maxDIC = max(DIC),
                      rangeDIC = max(DIC)-min(DIC),
+                     meanDIC = mean(DIC),
+                     sdDIC = sd(DIC),
+                     
                      minTA = min(TA_meas),
                      maxTA = max(TA_meas),
                      rangeTA = max(TA_meas)-min(TA_meas),
-                     survey = "S4")
+                     meanTA = mean(TA_meas),
+                     sdTA = sd(TA_meas))
     
     # Combine into one table
     s_stats_all = rbind(s3_stats,s2_stats,s4_stats,s1_stats)
@@ -1849,4 +1861,13 @@ idro_sg_daily_means = idro_sg_daily_sub %>%
                                           sd_dens = sd(density, na.rm = T),
                                           mean_calc = mean(calcification, na.rm = T),
                                           sd_calc = sd(calcification, na.rm = T))
+    
+#### Means across all years and cores (Results section)
+    cores_good_means = cores_good %>% 
+                       dplyr::summarize(mean_ext = mean(extension, na.rm = T),
+                                        sd_ext = sd(extension, na.rm = T),
+                                        mean_dens = mean(density, na.rm = T),
+                                        sd_dens = sd(density, na.rm = T),
+                                        mean_calc = mean(calcification, na.rm = T),
+                                        sd_calc = sd(calcification, na.rm = T))
 ```
