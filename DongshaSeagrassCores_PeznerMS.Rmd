@@ -25,8 +25,8 @@ library(RColorBrewer); library(MetBrewer); library(wesanderson); library(palette
 Load data required to make seawater chemistry spatial contour plots and calculate statistics.
 ```{r Load and process spatial survey data}
 ## Load data (file location will vary by user)
-  botdat <- read_excel("~/Documents/SIO/Dongsha 2018/Data/Dryad/bottledata.xlsx")
-  coreloc <- read_excel("~/Documents/SIO/Dongsha 2018/Data/Dryad/coreGPS.xlsx")
+  botdat <- read_excel("~/Documents/SIO/Dongsha 2018/Data/Zenodo/bottledata.xlsx")
+  coreloc <- read_excel("~/Documents/SIO/Dongsha 2018/Data/Zenodo/coreGPS.xlsx")
   
 ## Reformat Time column to only HH:MM
   botdat$Time <- format(botdat$Time, '%T')
@@ -1009,7 +1009,7 @@ library(lmodel2)
 tscol = c("gray")
 
 ## Load data --
-  DSHA_IDRO2 = read.csv('~/Documents/SIO/Dongsha 2018/Data/Dryad/idronaut.csv')
+  DSHA_IDRO2 = read.csv('~/Documents/SIO/Dongsha 2018/Data/Zenodo/idronaut.csv')
   DSHA_IDRO2$DateTime <- as.POSIXct(DSHA_IDRO2$DateTime, format = "%m/%d/%Y %H:%M:%S", tz = "UTC")
     
   # Convert DO (uM) to DO (umol/kg)
@@ -1261,7 +1261,7 @@ Loading data extracted from cores using Coral XDS (Half range method). Some core
 ```{r Load data, boxplots by site}
 ## Load data and adjust it
   # Load file
-    cores = read_excel("~/Documents/SIO/Dongsha 2018/Data/Dryad/coreXDS.xlsx")
+    cores = read_excel("~/Documents/SIO/Dongsha 2018/Data/Zenodo/coreXDS.xlsx")
     
   # Make CoreID a factor
     cores$coreID = as.factor(cores$coreID)
@@ -1278,13 +1278,8 @@ Loading data extracted from cores using Coral XDS (Half range method). Some core
 ## Create custom color palettes:
   core_pal = c("#79ad41","#ddc000","#34b6c6","#4063a3")
 
-## Filter cores to remove the cores where banding was hard to read or doubtful ("good" cores) - removes Cores 4, 10, 16, 20
-cores_good = cores %>%
-                filter(core_num == 1 | core_num == 2 | core_num == 3 | core_num == 5 | core_num == 6 | core_num == 7 |core_num == 8| core_num == 9 | 
-                         core_num == 11 | core_num == 12 | core_num == 13 | core_num == 15 | core_num == 17 | core_num == 18 | core_num == 19)
-
-## Subset good cores into "cores_6y" which only contains data from the "good" cores for years 2012-2017 (the 6 years they all have in common)
-cores_6y = cores_good %>% 
+## Subset cores into "cores_6y" which only contains data for years 2012-2017 (the 6 years they all have in common)
+cores_6y = cores %>% 
                 filter(year > 2011)
 
 ```
@@ -1418,7 +1413,7 @@ fig5_1/fig5_2/fig5_3
 ### FIGURE S3 - CALC, DENS, EXT TIME SERIES WITH CI SHADED --------
 
 ## Calculate mean calcification, extension, density rates for each location across all years with 95% CI
-  cores_meansCI = cores_good %>% dplyr::group_by(location, year) %>% 
+  cores_meansCI = cores %>% dplyr::group_by(location, year) %>% 
                                  dplyr::summarize(calc_mean = CI(calcification, ci = 0.95)[2],
                                                   calc_95CI_lower = CI(calcification, ci = 0.95)[3],
                                                   calc_95CI_upper = CI(calcification, ci = 0.95)[1],
@@ -1432,15 +1427,15 @@ fig5_1/fig5_2/fig5_3
                                                   ext_95CI_upper = CI(extension, ci = 0.95)[1])
   
 ## Add means and CIs to cores df by year and location for plotting
-  cores_good_all = merge(cores_good,cores_meansCI,by= c("location","year"))
+  cores_all = merge(cores,cores_meansCI,by= c("location","year"))
 
 ## Plots with means + CI on top
 
   # Extension
   s3a =  ggplot() +
-    geom_line(data = cores_good_all, aes(x = year, y = extension, group = coreID, color = location), alpha = 0.3, size = 1) +
-    geom_ribbon(data = cores_good_all, aes(ymin = ext_95CI_lower, ymax = ext_95CI_upper, x = year, fill = location), alpha = 0.3)+
-    geom_line(data = cores_good_all, aes(y = ext_mean, x = year, color = location), size = 1.3)+
+    geom_line(data = cores_all, aes(x = year, y = extension, group = coreID, color = location), alpha = 0.3, size = 1) +
+    geom_ribbon(data = cores_all, aes(ymin = ext_95CI_lower, ymax = ext_95CI_upper, x = year, fill = location), alpha = 0.3)+
+    geom_line(data = cores_all, aes(y = ext_mean, x = year, color = location), size = 1.3)+
     facet_wrap(~ location, ncol=4) +
     scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal) +
     scale_x_continuous(breaks = seq(1995,2015,5)) +
@@ -1453,9 +1448,9 @@ fig5_1/fig5_2/fig5_3
   
   # Density
   s3b =   ggplot() +
-    geom_line(data = cores_good_all, aes(x = year, y = density, group = coreID, color = location), alpha = 0.3, size = 1) +
-    geom_ribbon(data = cores_good_all, aes(ymin = dens_95CI_lower, ymax = dens_95CI_upper, x = year, fill = location), alpha = 0.3) +
-    geom_line(data = cores_good_all, aes(y = dens_mean, x = year, color = location), size = 1.3)+
+    geom_line(data = cores_all, aes(x = year, y = density, group = coreID, color = location), alpha = 0.3, size = 1) +
+    geom_ribbon(data = cores_all, aes(ymin = dens_95CI_lower, ymax = dens_95CI_upper, x = year, fill = location), alpha = 0.3) +
+    geom_line(data = cores_all, aes(y = dens_mean, x = year, color = location), size = 1.3)+
     facet_wrap(~ location, ncol=4) +
     scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal) +
     scale_x_continuous(breaks = seq(1995,2015,5)) +
@@ -1468,9 +1463,9 @@ fig5_1/fig5_2/fig5_3
     
   # Calcification
   s3c =  ggplot() +
-    geom_line(data = cores_good_all, aes(x = year, y = calcification, group = coreID, color = location), alpha = 0.3, size = 1) +
-    geom_ribbon(data = cores_good_all, aes(ymin = calc_95CI_lower, ymax = calc_95CI_upper, x = year, fill = location), alpha = 0.3) +
-    geom_line(data = cores_good_all, aes(y = calc_mean, x = year, color = location), size = 1.3)+
+    geom_line(data = cores_all, aes(x = year, y = calcification, group = coreID, color = location), alpha = 0.3, size = 1) +
+    geom_ribbon(data = cores_all, aes(ymin = calc_95CI_lower, ymax = calc_95CI_upper, x = year, fill = location), alpha = 0.3) +
+    geom_line(data = cores_all, aes(y = calc_mean, x = year, color = location), size = 1.3)+
     facet_wrap(~ location, ncol=4) +
     scale_color_manual(values = core_pal) + scale_fill_manual(values = core_pal) +
     scale_x_continuous(breaks = seq(1995,2015,5)) +
@@ -1863,7 +1858,7 @@ idro_sg_daily_means = idro_sg_daily_sub %>%
                                           sd_calc = sd(calcification, na.rm = T))
     
 #### Means across all years and cores (Results section)
-    cores_good_means = cores_good %>% 
+    cores_means = cores %>% 
                        dplyr::summarize(mean_ext = mean(extension, na.rm = T),
                                         sd_ext = sd(extension, na.rm = T),
                                         mean_dens = mean(density, na.rm = T),
