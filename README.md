@@ -3,7 +3,7 @@
 GitHub repository containing code accompanying the Dongsha Atoll seagrass bed coral core manuscript (Pezner et al., in review; link to be inserted after publication)
 
 **Data Repository DOI:** 
-Zenodo link to be updated when available
+10.5281/zenodo.10892686
 
 **Authors:** Ariel K. Pezner, Travis A. Courtney, Wen-Chen Chou, Hui-Chuan Chu, Benjamin W. Frable, Samuel A. H. Kekuewa, Keryea Soong, Yi Wei, Andreas J. Andersson
 
